@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent de surveillance des puits</title>
+<style>
+:root{--bg:#d9dbd6;--panel:#eceee9;--ink:#1d211f;--muted:#5b625e;--line:#c4c8c1;--bad:#b3122e;--warn:#8a5a00;--ok:#2f6b3a;--dark:#171b19;--chip:#e2e5df}
+@media (prefers-color-scheme:dark){:root{--bg:#141716;--panel:#1d2120;--ink:#e6e9e4;--muted:#a3aaa5;--line:#323835;--bad:#ff6b7f;--warn:#e6b450;--ok:#7cc48a;--dark:#0d0f0e;--chip:#262b29}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1320px;margin:0 auto;padding:20px 16px 40px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+h1{font-size:1.7rem;margin:0}
+.sub{color:var(--muted);margin:2px 0 0}
+.clock{font-size:2rem;font-weight:700;font-variant-numeric:tabular-nums}
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:.85rem;font-weight:600;background:var(--chip)}
+.badge.ok{color:var(--ok)} .badge.bad{color:#fff;background:var(--bad)}
+.kpis{display:flex;flex-wrap:wrap;gap:0;margin:14px 0}
+.kpis div{padding:4px 18px 4px 0;margin-right:18px;border-right:1px solid var(--line)}
+.kpis div:last-child{border:0}
+.kpis b{display:block;font-size:1.6rem;font-variant-numeric:tabular-nums}
+.kpis span{color:var(--muted);font-size:.85rem}
+.bad{color:var(--bad)} .warnv{color:var(--warn)} .okv{color:var(--ok)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px}
+@media (max-width:980px){.grid{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:16px}
+h2{font-size:1.05rem;margin:0 0 10px;display:flex;justify-content:space-between;gap:8px}
+h2 small{font-weight:400;color:var(--muted)}
+.alarm{border-left:5px solid var(--warn);padding:10px 12px;margin:0 0 10px;background:var(--bg);border-radius:4px}
+.alarm[data-sev=urgence]{border-color:var(--bad)}
+.alarm p{margin:3px 0}
+.alarm .head{font-weight:700}
+.alarm .act{font-weight:600}
+.alarm .meta{color:var(--muted);font-size:.86rem}
+.ackrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
+button,select{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 10px;border-radius:6px;cursor:pointer}
+button.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+button:disabled{opacity:.5;cursor:default}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.8rem;color:var(--muted);font-weight:600}
+td.num,th.num{text-align:right;white-space:nowrap}
+td:first-child{white-space:nowrap}
+tr.man td{background:var(--chip);font-weight:600}
+tr[data-state=urgence] td:first-child{box-shadow:inset 4px 0 var(--bad)}
+tr[data-state=avert] td:first-child{box-shadow:inset 4px 0 var(--warn)}
+.st{font-size:.86rem}
+.sub2{font-size:.78rem;color:var(--muted);font-weight:400}
+svg.spark{width:110px;height:22px;vertical-align:middle}
+svg.spark polyline{fill:none;stroke:currentColor;stroke-width:1.4}
+.wrap{overflow-x:auto}
+ul.log{list-style:none;margin:0;padding:0;max-height:420px;overflow:auto;font-size:.88rem}
+ul.log li{padding:5px 0;border-bottom:1px solid var(--line)}
+ul.log time{color:var(--muted);margin-right:6px;font-variant-numeric:tabular-nums}
+ul.log .t{font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-right:6px}
+ul.log li[data-type=detect] .t,ul.log li[data-type=escal] .t{color:var(--bad)}
+ul.log li[data-type=ack] .t,ul.log li[data-type=clear] .t{color:var(--ok)}
+.empty{color:var(--muted)}
+footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div>
+    <h1 id="title">Agent de surveillance des puits</h1>
+    <p class="sub" id="site"></p>
+  </div>
+  <div style="text-align:right">
+    <div class="clock" id="clock">--:--</div>
+    <span class="badge" id="link">…</span>
+  </div>
+</header>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="grid">
+  <div>
+    <section>
+      <h2><span id="hActive">Alarmes en cours</span><small id="nActive"></small></h2>
+      <div id="active"></div>
+    </section>
+    <section>
+      <h2><span id="hWells">Puits surveillés</span><small id="wellSum"></small></h2>
+      <div class="wrap"><table>
+        <thead><tr id="wellHead"></tr></thead>
+        <tbody id="wells"></tbody>
+      </table></div>
+    </section>
+  </div>
+  <div>
+    <section>
+      <h2><span id="hActions">Rapports</span></h2>
+      <div class="ackrow">
+        <button type="button" id="btnDaily">Envoyer le rapport journalier</button>
+        <button type="button" id="btnHand">Relève de quart</button>
+      </div>
+      <p class="empty" id="repStatus" role="status"></p>
+    </section>
+    <section>
+      <h2><span id="hJournal">Journal de l'agent</span></h2>
+      <ul class="log" id="journal"></ul>
+    </section>
+    <section>
+      <h2><span id="hMsg">Messages envoyés</span></h2>
+      <ul class="log" id="msgs"></ul>
+    </section>
+  </div>
+</div>
+<footer id="foot"></footer>
+</main>
+<script>
+"use strict";
+const TXT = {
+  fr:{title:"Agent de surveillance des puits", active:"Alarmes en cours", wells:"Puits surveillés", actions:"Rapports", journal:"Journal de l'agent", msgs:"Messages envoyés",
+      daily:"Envoyer le rapport journalier", hand:"Relève de quart", sent:"Rapport envoyé.", none:"Aucune alarme en cours.",
+      linkOk:"SCADA : lecture OK", linkBad:"Liaison SCADA perdue", since:"depuis", grouped:"alarme(s) regroupée(s)", ackBy:"Acquitter au nom de",
+      acked:"Acquittée par", notified:"SMS envoyés à", urg:"Urgence", avert:"Avertissement",
+      head:["Puits","Pression tête","Tendance 90 min","P. ligne","Huile","Annulaire","Injection","RTU","État"],
+      types:{gas_lift:"Gas lift",natural:"Éruptif",natural_water:"Éruptif, eau"}, normal:"Normal", learning:"apprentissage des valeurs normales",
+      online:"en ligne", offline:"hors ligne", kpi:["puits en alarme","alarmes présentées / détections (24 h)","alarmes par 10 min (cible 1)","SMS envoyés","délai moyen d'acquittement","production différée"],
+      foot:"Lecture seule : l'agent n'envoie aucune commande au SCADA. Les alarmes et les systèmes de sécurité du SCADA restent la référence.",
+      sum:(n,u,a)=>`${n} normaux, ${u} en urgence, ${a} en avertissement`},
+  en:{title:"Well surveillance agent", active:"Active alarms", wells:"Monitored wells", actions:"Reports", journal:"Agent log", msgs:"Messages sent",
+      daily:"Send the daily report", hand:"Shift handover", sent:"Report sent.", none:"No active alarm.",
+      linkOk:"SCADA: reading OK", linkBad:"SCADA link lost", since:"since", grouped:"grouped alarm(s)", ackBy:"Acknowledge as",
+      acked:"Acknowledged by", notified:"SMS sent to", urg:"Emergency", avert:"Warning",
+      head:["Well","Wellhead pressure","90 min trend","Line pressure","Oil","Annulus","Injection","RTU","State"],
+      types:{gas_lift:"Gas lift",natural:"Natural flow",natural_water:"Natural, water"}, normal:"Normal", learning:"learning normal values",
+      online:"online", offline:"offline", kpi:["wells in alarm","alarms shown / detections (24 h)","alarms per 10 min (target 1)","SMS sent","mean time to acknowledge","deferred production"],
+      foot:"Read-only: the agent sends no command to the SCADA. SCADA alarms and safety systems remain the reference.",
+      sum:(n,u,a)=>`${n} normal, ${u} emergency, ${a} warning`}
+};
+let L = TXT.fr, lastState = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const hhmm = t => { const d = new Date(t*1000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+let LOC = "fr-FR";
+const num = (v,d=1) => (typeof v === "number" && isFinite(v)) ? v.toLocaleString(LOC, {minimumFractionDigits:d, maximumFractionDigits:d}) : "–";
+
+async function post(path, body){
+  const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"agent"}, body:JSON.stringify(body)});
+  return r.json();
+}
+function spark(h){
+  if(!h || h.length < 2) return "";
+  const mn = Math.min(...h), mx = Math.max(...h), sp = Math.max(mx - mn, 2);
+  const pts = h.map((v,i) => `${(i/(h.length-1)*110).toFixed(1)},${(21 - (v-mn)/sp*20).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 110 22" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+}
+function render(s){
+  lastState = s;
+  L = TXT[s.language] || TXT.fr;
+  LOC = s.language === "en" ? "en-GB" : "fr-FR";
+  document.documentElement.lang = s.language;
+  $("title").textContent = L.title; document.title = L.title;
+  $("site").textContent = `${s.site} · ${s.connector.type.toUpperCase()} · v${s.version}`;
+  $("clock").textContent = hhmm(s.now);
+  const lk = $("link"); lk.textContent = s.link.ok ? L.linkOk : `${L.linkBad}${s.link.error ? " : " + s.link.error : ""}`;
+  lk.className = "badge " + (s.link.ok ? "ok" : "bad");
+  $("hActive").textContent = L.active; $("hWells").textContent = L.wells; $("hActions").textContent = L.actions;
+  $("hJournal").textContent = L.journal; $("hMsg").textContent = L.msgs; $("btnDaily").textContent = L.daily; $("btnHand").textContent = L.hand;
+  $("foot").textContent = L.foot;
+  const nal = s.wells.filter(w => w.alarms.length).length, P = s.perf;
+  const acks = P.ack_avg_min == null ? "–" : Math.round(P.ack_avg_min) + " min";
+  const smsN = s.messages.filter(m => m.channel === "sms").length;
+  $("kpis").innerHTML = [[`${nal} / ${s.wells.length}`, nal ? "bad" : ""], [`${P.roots} / ${P.raw}`, ""], [num(P.rate_vis,2), P.rate_vis > 1 ? "bad" : ""],
+    [String(smsN), ""], [acks, ""], [`${num(s.defer_m3,1)} m³`, s.defer_m3 > 1 ? "bad" : ""]]
+    .map(([v,c],i) => `<div><b class="${c}">${esc(v)}</b><span>${esc(L.kpi[i])}</span></div>`).join("");
+
+  // active alarms
+  const act = [...s.link_alarms.filter(a => a.parent === null), ...s.active.filter(a => a.kind !== "link")];
+  $("nActive").textContent = act.length ? String(act.length) : "";
+  $("active").innerHTML = act.length ? act.map(a => `
+    <div class="alarm" data-sev="${esc(a.severity)}">
+      <p class="head">${esc(a.entity)} · ${esc(a.title)}</p>
+      <p class="meta">${a.severity === "urgence" ? L.urg : L.avert} ${L.since} ${hhmm(a.t0)} · ${esc(a.value)}${a.children.length ? ` · ${a.children.length} ${L.grouped}` : ""}</p>
+      <p>${esc(a.diag)}</p>
+      <p class="act">→ ${esc(a.action)}</p>
+      <p class="meta">${a.notified.length ? L.notified + " " + a.notified.map(i => esc(s.roster[i].name)).join(", ") : ""}</p>
+      ${a.severity === "urgence" ? (a.ack ? `<p class="meta okv">${L.acked} ${esc(s.roster[a.ack.idx].name)} (${esc(a.ack.via)}) ${hhmm(a.ack.t)}</p>`
+        : `<div class="ackrow"><span class="meta">${L.ackBy}</span>${s.roster.map((c,i) => `<button type="button" data-ack="${a.id}" data-idx="${i}">${esc(c.name)}</button>`).join("")}</div>`) : ""}
+    </div>`).join("") : `<p class="empty">${L.none}</p>`;
+
+  // wells
+  $("wellHead").innerHTML = L.head.map((h,i) => `<th class="${[1,3,4,5,6].includes(i) ? "num" : ""}">${esc(h)}</th>`).join("");
+  let nu = 0, na = 0; const rows = [];
+  for(const m of s.manifolds){
+    const ma = m.alarms.map(a => a.title).join(", ");
+    const sat = (s.satellites || []).find(x => x.id === m.satellite), sa = sat ? sat.alarms.map(a => a.title).join(", ") : "";
+    rows.push(`<tr class="man"><td colspan="9">${m.satellite ? `${esc(m.satellite)} › ` : ""}Manifold ${esc(m.id)} · ${esc(m.repeater)} · P ${num(m.values.p_man)} Barg${m.values.p_test != null ? ` · test ${num(m.values.p_test)}` : ""} · GL ${num(m.values.p_gl)} Barg ${ma || sa ? `<span class="bad">· ${esc([sa, ma].filter(Boolean).join(" · "))}</span>` : ""}</td></tr>`);
+    for(const w of s.wells.filter(x => x.manifold === m.id)){
+      if(w.state === "urgence") nu++; else if(w.state === "avert") na++;
+      const day = s.language === "en" ? "d" : "j", v = w.values, inj = w.type === "gas_lift" ? `${num(v.gl_flow,0)} Sm³/${day}` : w.type === "natural_water" ? `${num(v.water_flow)} m³/${day}` : "–";
+      const st = w.alarms.length ? w.alarms.map(a => esc(a.title) + (a.parent ? " ↳" : "")).join(", ") : (w.learning ? `<span class="warnv">${L.learning}</span>` : (v.on_test ? (s.language === "en" ? "On test" : "En essai") : L.normal));
+      const radio = w.age_min >= 2 ? `<span class="bad">${L.offline} ${Math.round(w.age_min)} min</span>` : `<span class="okv">${L.online}</span><br><span class="sub2">${num(v.battery,1)} V</span>`;
+      rows.push(`<tr data-state="${w.state}"><td><strong>${esc(w.id)}</strong><br><span class="sub2">${esc(L.types[w.type])}</span></td>
+        <td class="num">${num(v.whp)} Barg</td><td>${spark(w.hist)}</td><td class="num">${num(v.line_p)}</td><td class="num">${num(v.oil_rate)} m³/${day}</td>
+        <td class="num">${num(v.ann)}${v.ann_7 != null && w.type !== "gas_lift" ? ` / ${num(v.ann_7)}` : ""}</td><td class="num">${inj}</td>
+        <td style="white-space:nowrap">${radio}</td><td class="st ${w.state === "urgence" ? "bad" : w.state === "avert" ? "warnv" : ""}">${st}</td></tr>`);
+    }
+  }
+  $("wells").innerHTML = rows.join("");
+  $("wellSum").textContent = L.sum(s.wells.length - nu - na, nu, na);
+  $("journal").innerHTML = s.journal.map(j => `<li data-type="${esc(j.type)}"><time>${hhmm(j.t)}</time><span class="t">${esc(j.type)}</span>${j.label ? `<strong>${esc(j.label)}</strong> ` : ""}${esc(j.text)}</li>`).join("");
+  $("msgs").innerHTML = s.messages.map(m => `<li><time>${hhmm(m.t)}</time><span class="t">${esc(m.channel)}</span>${esc(m.recipient)} · ${esc(m.subject)} ${m.status === "failed" ? `<span class="bad">ÉCHEC ${esc(m.error)}</span>` : ""}</li>`).join("") || `<li class="empty">–</li>`;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-ack]");
+  if(b){ b.disabled = true; await post("/api/ack", {alarm_id:+b.dataset.ack, idx:+b.dataset.idx}); refresh(); }
+});
+$("btnDaily").addEventListener("click", async () => { await post("/api/report", {kind:"daily"}); $("repStatus").textContent = L.sent; });
+$("btnHand").addEventListener("click", async () => { await post("/api/report", {kind:"handover"}); $("repStatus").textContent = L.sent; });
+async function refresh(){
+  try{ const r = await fetch("/api/state", {cache:"no-store"}); if(r.ok) render(await r.json()); }
+  catch(e){ const lk = $("link"); lk.textContent = "Agent injoignable / agent unreachable"; lk.className = "badge bad"; }
+}
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>

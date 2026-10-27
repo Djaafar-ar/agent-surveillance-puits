@@ -1,0 +1,18 @@
+# Linux (systemd). Copy to /etc/systemd/system/agent-surveillance-puits.service, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now agent-surveillance-puits
+[Unit]
+Description=Well surveillance agent (read-only)
+After=network-online.target
+
+[Service]
+User=agent
+WorkingDirectory=/opt/agent-surveillance-puits
+ExecStart=/opt/agent-surveillance-puits/.venv/bin/python -m agent run --config config/config.yaml
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/agent-surveillance-puits/data
+
+[Install]
+WantedBy=multi-user.target

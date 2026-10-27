@@ -1,0 +1,105 @@
+# Configuration for the DEMONSTRATION: the agent reads the field simulator
+# (simulator/sim_server.py) over OPC UA, exactly as it would read a real SCADA.
+# For a real site, start from config.example.yaml instead.
+
+site:
+  name: "Champ de démonstration (simulé)"
+  language: fr            # fr or en: language of SMS, e-mails and dashboard
+
+poll_seconds: 60          # one reading per minute
+
+# Simulation only: the simulator runs faster than real time and publishes its
+# own clock. On a real site, remove this block (the agent uses the PC clock).
+clock:
+  opcua_node: "ns=2;s=Site.SimTime"
+
+connector:
+  type: opcua
+  url: "opc.tcp://127.0.0.1:4840/agent-sim/"
+  # Tag address of each signal. {id} is replaced by the well or manifold id.
+  well_tags:
+    whp: "ns=2;s={id}.WHP"
+    wht: "ns=2;s={id}.WHT"
+    line_p: "ns=2;s={id}.LINE_P"
+    arrival_p: "ns=2;s={id}.ARRIVAL_P"
+    ann: "ns=2;s={id}.ANN"
+    ann_7: "ns=2;s={id}.ANN_7"
+    oil_rate: "ns=2;s={id}.OIL_RATE"
+    gl_flow: "ns=2;s={id}.GL_FLOW"
+    gl_inj_p: "ns=2;s={id}.GL_INJ_P"
+    gl_setpoint: "ns=2;s={id}.GL_SETPOINT"
+    gl_valve_pos: "ns=2;s={id}.GL_VALVE_POS"
+    gl_mode_auto: "ns=2;s={id}.GL_MODE_AUTO"
+    water_flow: "ns=2;s={id}.WATER_FLOW"
+    on_test: "ns=2;s={id}.ON_TEST"
+    battery: "ns=2;s={id}.BATTERY"
+    battery_current: "ns=2;s={id}.BATTERY_I"
+    solar_current: "ns=2;s={id}.SOLAR_I"
+    solar_voltage: "ns=2;s={id}.SOLAR_V"
+    cabinet_temp: "ns=2;s={id}.CABINET_T"
+    io_fault: "ns=2;s={id}.IO_FAULT"
+    comm_ok: "ns=2;s={id}.COMM_OK"
+    sdv_closed: "ns=2;s={id}.SDV_CLOSED"
+    fire: "ns=2;s={id}.FIRE"
+    remote_cmd: "ns=2;s={id}.REMOTE_CMD"
+    pit_cover_open: "ns=2;s={id}.PIT_COVER"
+    cabinet_door_open: "ns=2;s={id}.CABINET_DOOR"
+    shelter_door_open: "ns=2;s={id}.SHELTER_DOOR"
+    concertina_alarm: "ns=2;s={id}.CONCERTINA"
+    presence_5m: "ns=2;s={id}.PRESENCE_5M"
+  manifold_tags:
+    p_man: "ns=2;s={id}.P_MAN"
+    p_test: "ns=2;s={id}.P_TEST"
+    p_gl: "ns=2;s={id}.P_GL"
+
+learn_minutes: 30         # the agent learns each well's normal values before alarming on them
+baseline_hours: 12
+escalation_min: 10
+sms_warnings: false
+daily_report_hour: 7
+oil_price_usd: 70
+
+roster:
+  - {name: "K. Benali", role: "Technicien d'astreinte", phone: "+213600000001"}
+  - {name: "S. Hamdi", role: "Chef de quart", phone: "+213600000002"}
+  - {name: "A. Mansouri", role: "Superviseur production", phone: "+213600000003"}
+
+sms:
+  type: console           # console | android_gateway | gsm_modem
+
+email:
+  type: console           # console (writes .eml files to data/outbox) | smtp
+  alarm_to: ["salle.controle@exemple.dz"]
+  report_to: ["ingenieur.production@exemple.dz"]
+
+web:
+  host: 127.0.0.1
+  port: 8080
+
+storage:
+  path: ../data/agent-sim.db
+
+# Pipe network: zone -> satellite station -> sub-manifold -> well.
+# Radio network: each well's RTU talks through a repeater (independent of the pipes).
+satellites:
+  - {id: SAT-1, zone: Z-NORD}
+  - {id: SAT-2, zone: Z-NORD}
+
+manifolds:
+  - {id: MAN-A, satellite: SAT-1, repeater: R1}
+  - {id: MAN-B, satellite: SAT-1, repeater: R2}
+  - {id: MAN-C, satellite: SAT-2, repeater: R3}
+
+wells:
+  - {id: PUITS-01, type: gas_lift,      manifold: MAN-A, maasp: 48, potential_m3d: 46}
+  - {id: PUITS-02, type: gas_lift,      manifold: MAN-A, maasp: 48, potential_m3d: 38}
+  - {id: PUITS-03, type: natural,       manifold: MAN-A, maasp: 55, potential_m3d: 72}
+  - {id: PUITS-04, type: natural_water, manifold: MAN-A, maasp: 52, potential_m3d: 58}
+  - {id: PUITS-05, type: gas_lift,      manifold: MAN-B, maasp: 45, potential_m3d: 64}
+  - {id: PUITS-06, type: gas_lift,      manifold: MAN-B, maasp: 45, potential_m3d: 41}
+  - {id: PUITS-07, type: natural,       manifold: MAN-B, maasp: 52, potential_m3d: 55}
+  - {id: PUITS-08, type: natural_water, manifold: MAN-B, maasp: 50, potential_m3d: 33}
+  - {id: PUITS-09, type: gas_lift,      manifold: MAN-C, maasp: 47, potential_m3d: 29}
+  - {id: PUITS-10, type: gas_lift,      manifold: MAN-C, maasp: 47, potential_m3d: 44}
+  - {id: PUITS-11, type: natural,       manifold: MAN-C, maasp: 58, potential_m3d: 81}
+  - {id: PUITS-12, type: natural_water, manifold: MAN-C, maasp: 50, potential_m3d: 49}

@@ -1,0 +1,1703 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent de surveillance des puits</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Semi+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#D6D9D4; --panel:#EBEDE8; --panel-2:#E1E4DE; --line:#B6BBB3; --ink:#1C211E; --muted:#555C56;
+  --alarm:#B00F29; --alarm-bg:#F4D6DA; --warn:#7F5B00; --warn-bg:#F3MAN-B5; --info:#28557F; --ok:#2F6A45;
+  --phone:#121617; --phone-2:#1F2629; --phone-ink:#EEF0EC; --phone-muted:#A3ADB0; --phone-alarm:#FF7A8A;
+  --focus:#28557F;
+  --font:"Barlow","Segoe UI",system-ui,sans-serif;
+  --num:"Barlow Semi Condensed","Arial Narrow","Segoe UI",system-ui,sans-serif;
+  --cols:1.45fr 1.5fr .9fr 1.1fr .75fr 1fr;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#171A18; --panel:#222623; --panel-2:#1C201D; --line:#3A403B; --ink:#E2E5E0; --muted:#A0A8A1;
+    --alarm:#FF7A8A; --alarm-bg:#3A1C21; --warn:#F2C14E; --warn-bg:#352C17; --info:#86B6E6; --ok:#7CC195;
+    --phone:#0A0C0D; --phone-2:#192022; --focus:#86B6E6;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171A18; --panel:#222623; --panel-2:#1C201D; --line:#3A403B; --ink:#E2E5E0; --muted:#A0A8A1;
+  --alarm:#FF7A8A; --alarm-bg:#3A1C21; --warn:#F2C14E; --warn-bg:#352C17; --info:#86B6E6; --ok:#7CC195;
+  --phone:#0A0C0D; --phone-2:#192022; --focus:#86B6E6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 var(--font)}
+button,select,input,textarea{font:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+[hidden]{display:none !important}
+.muted{color:var(--muted)}
+
+.app{max-width:1320px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:14px 16px;min-width:0}
+h2{font-size:1.05rem;font-weight:600;margin:0 0 10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+h3{font-size:1rem;margin:18px 0 8px}
+.count{font:500 .92rem var(--num);color:var(--muted);font-variant-numeric:tabular-nums}
+.hint{margin:8px 0 0;color:var(--muted);font-size:.92rem;max-width:80ch}
+
+.head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding:4px 0 12px;border-bottom:2px solid var(--ink)}
+.head h1{margin:0;font-size:clamp(1.4rem,3vw,2rem);line-height:1.1;font-weight:700;letter-spacing:-.01em}
+.head p{margin:6px 0 0;color:var(--muted);max-width:62ch}
+.clock{display:flex;align-items:baseline;gap:10px}
+.clock .big{font:600 2.3rem/1 var(--num);font-variant-numeric:tabular-nums}
+.clock .date{color:var(--muted);font-family:var(--num)}
+.badge{font-size:.8rem;padding:2px 9px;border:1px solid var(--line);border-radius:10px;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;min-height:40px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:3px;cursor:pointer;font-weight:500;text-decoration:none}
+.btn:hover{border-color:var(--ink)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.btn.quiet{background:transparent}
+.seg{display:inline-flex;flex-wrap:wrap}
+.seg .btn{border-radius:0;font-family:var(--num)}
+.seg .btn:first-child{border-radius:3px 0 0 3px}
+.seg .btn:last-child{border-radius:0 3px 3px 0}
+.seg .btn+.btn{margin-left:-1px}
+.seg .btn[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+
+.demo{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;background:var(--ink);color:var(--panel);padding:10px 14px;border-radius:3px}
+.demo p{margin:0;font-weight:500;max-width:90ch}
+.demo .btn{color:var(--panel);border-color:var(--panel)}
+
+.kpis{display:flex;flex-wrap:wrap;gap:10px 0}
+.kpis div{padding:2px 18px 2px 0;margin-right:18px;border-right:1px solid var(--line);display:flex;flex-direction:column}
+.kpis div:last-child{border-right:0}
+.kpis b{font:600 1.6rem/1.1 var(--num);font-variant-numeric:tabular-nums}
+.kpis span{font-size:.85rem;color:var(--muted)}
+.kpis b.bad{color:var(--alarm)}
+
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--line)}
+.tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;color:var(--muted);cursor:pointer;font-weight:600;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.tbadge{font:500 .8rem var(--num);background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:0 7px;margin-left:4px}
+
+.rt{display:grid;gap:14px;grid-template-columns:minmax(0,1fr);grid-template-areas:"inc" "wells" "phone" "detail" "journal"}
+@media (min-width:1040px){
+  .rt{grid-template-columns:minmax(0,1fr) 360px;grid-template-areas:"inc phone" "wells phone" "detail journal"}
+  .phone-wrap{align-self:start}
+}
+.inc{grid-area:inc}.wells{grid-area:wells}.detail{grid-area:detail}.journal{grid-area:journal}.phone-wrap{grid-area:phone}
+.inc-group{margin-bottom:12px}
+.inc-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin-bottom:8px}
+.inc-row label{font-weight:600}
+select,input[type="text"],input[type="email"],textarea{min-height:40px;padding:6px 10px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:3px}
+select{font-family:var(--num);font-size:1.02rem}
+.inc-btns{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+.well-head{display:none}
+.manrow{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:12px 8px 6px;border-top:2px solid var(--ink);font-size:.9rem}
+.manrow:first-child{border-top:0}
+.manrow strong{font-weight:600}
+.manrow .mvals{font-family:var(--num);color:var(--muted);font-variant-numeric:tabular-nums}
+.manrow[data-state="urgence"] .mstate{color:var(--alarm);font-weight:600}
+.well{border-top:1px solid var(--line);border-left:4px solid transparent;padding:9px 8px 9px 12px;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;cursor:pointer}
+.well:hover{background:var(--panel-2)}
+.well[aria-pressed="true"]{box-shadow:inset 0 0 0 2px var(--ink)}
+.well .w-name,.well .w-p{grid-column:1 / -1}
+.lab{display:block;font-size:.76rem;color:var(--muted)}
+.val{font-size:.84rem;color:var(--muted)}
+.val i{font-style:normal}
+.val b{font:600 1.15rem var(--num);color:var(--ink);font-variant-numeric:tabular-nums}
+.val.bad b{color:var(--alarm)}
+.val.warnv b{color:var(--warn)}
+.w-name strong{font:600 1.2rem var(--num);letter-spacing:.01em;margin-right:6px}
+.wtype{font-size:.8rem;color:var(--muted)}
+.w-name .state{display:block;font-size:.86rem;color:var(--muted)}
+.w-name .sim{display:block;font-size:.76rem;color:var(--muted)}
+.well[data-state="avert"]{border-left-color:var(--warn);background:var(--warn-bg)}
+.well[data-state="avert"] .state{color:var(--warn);font-weight:600}
+.well[data-state="urgence"]{border-left-color:var(--alarm);background:var(--alarm-bg)}
+.well[data-state="urgence"] .state{color:var(--alarm);font-weight:600}
+.well.stale .w-p b,.well.stale .w-a b,.well.stale .w-q b,.well.stale .w-t b{opacity:.45}
+.spark{display:block;width:100%;max-width:220px;height:24px;margin-top:2px}
+.spark polyline{fill:none;stroke:var(--muted);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.well[data-state="urgence"] .spark polyline{stroke:var(--alarm)}
+@media (min-width:760px){
+  .well-head{display:grid;grid-template-columns:var(--cols);gap:12px;font-size:.78rem;color:var(--muted);padding:0 8px 6px 16px}
+  .well{grid-template-columns:var(--cols);align-items:center;gap:12px}
+  .well .w-name,.well .w-p{grid-column:auto}
+  .lab{display:none}
+  .spark{max-width:130px}
+}
+
+.chart{display:block;width:100%;height:auto}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart text{fill:var(--muted);font:12px var(--num)}
+.chart .s-p{stroke:var(--ink);stroke-width:2;fill:none}
+.chart .s-man{stroke:var(--info);stroke-width:1.5;fill:none}
+.chart .s-ann{stroke:var(--warn);stroke-width:1.5;fill:none}
+.chart .h-th{stroke:var(--alarm);stroke-width:1;stroke-dasharray:5 4;opacity:.7}
+.chart .s-reg{stroke:var(--info);stroke-width:2;stroke-dasharray:7 4;fill:none}
+.chart .s-fc{stroke:var(--alarm);stroke-width:2.2;stroke-dasharray:2 5;stroke-linecap:round;fill:none}
+.chart .ev{stroke:var(--muted);stroke-width:1;stroke-dasharray:2 3}
+.chart .ex{stroke:var(--muted);stroke-width:1.2}
+.chart .today{stroke:var(--ink);stroke-width:1;opacity:.5}
+.legend{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:.84rem;color:var(--muted);margin:6px 0 10px}
+.legend span::before{content:"";display:inline-block;width:18px;height:0;border-top:2px solid currentColor;vertical-align:middle;margin-right:6px}
+.legend .l-p{color:var(--ink)}.legend .l-man{color:var(--info)}.legend .l-ann{color:var(--warn)}
+.legend .l-th::before{border-top:2px dashed var(--alarm)}
+.legend .l-reg::before{border-top:2px dashed var(--info)}
+.legend .l-fc::before{border-top:2px dotted var(--alarm)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 4px}
+.chip{font-size:.8rem;border:1px solid var(--line);border-radius:12px;padding:2px 10px;background:var(--panel-2);color:var(--muted)}
+.chip.ok{color:var(--ok)}
+.chip.warnv{color:var(--warn);border-color:var(--warn)}
+.chip.bad{color:var(--alarm);border-color:var(--alarm);font-weight:600}
+.chart .b-raw{fill:var(--muted);opacity:.55}
+.chart .b-vis{fill:var(--ink)}
+.legend .l-raw::before{border-top:8px solid var(--muted);opacity:.55}
+.legend .l-vis::before{border-top:8px solid var(--ink)}
+.pass{color:var(--ok);font-weight:600}
+.fail{color:var(--alarm);font-weight:600}
+.d-alarm{border-left:4px solid var(--warn);padding:6px 10px;margin:8px 0;background:var(--panel-2)}
+.d-alarm[data-sev="urgence"]{border-left-color:var(--alarm)}
+.d-alarm p{margin:3px 0}
+.d-alarm .d-act{font-weight:600}
+.ai-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.ai-out{white-space:pre-wrap;font:.95rem/1.5 var(--font);background:var(--panel-2);border:1px solid var(--line);border-left:4px solid var(--info);padding:10px 12px;margin:10px 0 0;border-radius:2px}
+
+.phone{background:var(--phone);color:var(--phone-ink);border:6px solid #2B3134;border-radius:32px;padding:20px 14px 16px;max-width:400px;margin:0 auto}
+.lock{text-align:center;position:relative;padding:8px 0 14px}
+.ph-time{font:600 4.2rem/1 var(--num);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.ph-date{color:var(--phone-muted);margin-top:6px}
+.ph-date::first-letter{text-transform:uppercase}
+.ph-badge{position:absolute;top:0;right:4px;font-size:.78rem;padding:2px 9px;border-radius:10px;background:#2B3438;color:var(--phone-muted)}
+.roster{font-size:.82rem;color:var(--phone-muted);border-top:1px solid #2B3438;border-bottom:1px solid #2B3438;padding:8px 4px;margin:0 0 10px}
+.roster p{margin:0;color:var(--phone-ink);font-weight:600}
+.roster ol{margin:4px 0 0;padding-left:1.3em}
+.notifs{display:flex;flex-direction:column;gap:8px;max-height:560px;overflow-y:auto}
+.notifs .empty{color:var(--phone-muted);text-align:center;margin:18px 0}
+.notif{background:var(--phone-2);border-radius:16px;padding:10px 12px;animation:drop .3s ease-out}
+@keyframes drop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.notif{animation:none}}
+.notif header{display:flex;justify-content:space-between;gap:8px;font-size:.78rem;color:var(--phone-muted);margin-bottom:4px}
+.sms-text{white-space:pre-wrap;margin:0;font-size:.92rem;line-height:1.35}
+.sms-head{color:var(--phone-alarm)}
+.notif[data-sev="avert"] .sms-head{color:#F2C14E}
+.notif[data-kind="clear"] .sms-head{color:#8FD3A6}
+.ack-btn{margin-top:8px;width:100%;min-height:40px;border-radius:20px;border:0;background:#EEF0EC;color:#121617;font-weight:600;cursor:pointer}
+.ack-btn:focus-visible{outline-color:#EEF0EC}
+.reply{margin:8px 0 2px auto;width:max-content;background:#2F5D8A;color:#fff;padding:3px 14px;border-radius:14px 14px 4px 14px;font-weight:600}
+.ack-note{margin:4px 0 0;font-size:.78rem;color:var(--phone-muted)}
+
+.jlist{list-style:none;margin:0;padding:0;max-height:520px;overflow-y:auto}
+.jlist li{display:grid;grid-template-columns:3.1rem minmax(0,1fr);gap:0 8px;padding:7px 0;border-top:1px solid var(--line);font-size:.9rem}
+.jlist time{font-family:var(--num);color:var(--muted);font-variant-numeric:tabular-nums;grid-row:span 2}
+.jlist .jt{font-weight:600;font-size:.82rem}
+.jlist p{margin:0}
+.jlist [data-type="detect"] .jt{color:var(--alarm)}
+.jlist [data-type="sms"] .jt,.jlist [data-type="mail"] .jt{color:var(--info)}
+.jlist [data-type="escal"] .jt{color:var(--warn)}
+.jlist [data-type="ack"] .jt,.jlist [data-type="clear"] .jt{color:var(--ok)}
+.jlist [data-type="incident"] .jt,.jlist [data-type="info"] .jt,.jlist [data-type="group"] .jt{color:var(--muted)}
+
+.decl{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+.tscroll{overflow-x:auto}
+table.dt{border-collapse:collapse;width:100%;min-width:820px;font-size:.92rem}
+.dt th{font-size:.8rem;font-weight:600;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--ink)}
+.dt td{padding:8px;border-top:1px solid var(--line);vertical-align:top}
+.dt td.num,.dt th.num{text-align:right;font-family:var(--num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.dt tbody tr{cursor:pointer}
+.dt tbody tr:hover{background:var(--panel-2)}
+.dt tbody tr[aria-selected="true"]{box-shadow:inset 4px 0 0 var(--ink);background:var(--panel-2)}
+.dt .bad{color:var(--alarm);font-weight:600}
+.dt .warnv{color:var(--warn);font-weight:600}
+.dt .cls{font-weight:600}
+.notes p{margin:6px 0;max-width:80ch}
+.notes .act{font-weight:600}
+
+.mailitem{border-top:1px solid var(--line);padding:9px 0}
+.mailitem summary{cursor:pointer;list-style:none;display:flex;flex-direction:column;gap:2px}
+.mailitem summary::-webkit-details-marker{display:none}
+.mailitem summary:hover .m-subj{text-decoration:underline}
+.m-subj{font-weight:600}
+.mailitem[data-level="urgence"] .m-subj{color:var(--alarm)}
+.mailitem[data-level="avert"] .m-subj{color:var(--warn)}
+.m-meta{font-size:.8rem;color:var(--muted);overflow-wrap:anywhere}
+.m-body{white-space:pre-wrap;font:.88rem/1.5 var(--font);background:var(--panel-2);border:1px solid var(--line);padding:10px 12px;margin:8px 0 0;border-radius:2px;overflow-x:auto;max-height:520px;overflow-y:auto}
+.m-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.m-status{font-size:.86rem;color:var(--ok)}
+#mailList .empty{color:var(--muted)}
+.mail-grid{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1040px){.mail-grid{grid-template-columns:360px minmax(0,1fr);align-items:start}}
+.to-list{font-family:var(--num);overflow-wrap:anywhere}
+
+.form-grid{display:grid;gap:14px 18px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.field label{display:block;font-weight:600;margin-bottom:4px}
+.field textarea,.field select,.field input{width:100%}
+.field small{display:block;color:var(--muted);font-size:.82rem;margin-top:3px}
+.field.check label{display:flex;gap:8px;align-items:flex-start;font-weight:500}
+.field.check input{width:auto;margin-top:5px}
+.rost{display:grid;gap:8px;grid-template-columns:2rem repeat(3,minmax(0,1fr));align-items:center;margin-bottom:8px}
+.rost span{font:600 1.1rem var(--num);color:var(--muted)}
+@media (max-width:640px){.rost{grid-template-columns:2rem minmax(0,1fr)}.rost input{grid-column:2}}
+#setStatus{color:var(--ok);font-weight:500}
+#setStatus.err{color:var(--alarm)}
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="head">
+    <div>
+      <h1>Agent de surveillance des puits</h1>
+      <p>Simulateur de démonstration : 12 puits, 3 manifolds, télémétrie radio. Données fictives, aucune connexion au SCADA. À ×1, une seconde correspond à une minute simulée.</p>
+    </div>
+    <div class="clock">
+      <span id="clockTime" class="big">02:50</span>
+      <span id="clockDate" class="date">19/05/2026</span>
+      <span id="nightBadge" class="badge">Nuit</span>
+    </div>
+    <div class="controls">
+      <button id="demoBtn" class="btn primary" type="button">Lancer la démo guidée</button>
+      <button id="playBtn" class="btn" type="button">Pause</button>
+      <div class="seg" role="group" aria-label="Vitesse de simulation">
+        <button class="btn" type="button" data-speed="1" aria-pressed="true">×1</button>
+        <button class="btn" type="button" data-speed="5" aria-pressed="false">×5</button>
+        <button class="btn" type="button" data-speed="15" aria-pressed="false">×15</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="demoBar" class="demo" hidden><p id="demoText" aria-live="polite"></p><button id="demoStop" class="btn quiet" type="button">Arrêter la démo</button></div>
+
+  <section class="kpis" aria-label="Indicateurs">
+    <div><b id="kAlarm">0 / 12</b><span>puits en alarme</span></div>
+    <div><b id="kRadio">100 %</b><span>disponibilité radio</span></div>
+    <div><b id="kDefer">0 m³</b><span>production différée</span></div>
+    <div><b id="kLoad">0 / 0</b><span>alarmes vues / détectées</span></div>
+    <div><b id="kSms">0</b><span>SMS envoyés</span></div>
+    <div><b id="kAck">–</b><span>délai moyen d'acquittement</span></div>
+    <div><b id="kReport">07:00</b><span>prochain rapport automatique</span></div>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-rt" data-tab="rt" aria-controls="panel-rt" aria-selected="true">Temps réel</button>
+    <button role="tab" id="tab-decl" data-tab="decl" aria-controls="panel-decl" aria-selected="false" tabindex="-1">Déclin long terme</button>
+    <button role="tab" id="tab-perf" data-tab="perf" aria-controls="panel-perf" aria-selected="false" tabindex="-1">Performance des alarmes</button>
+    <button role="tab" id="tab-mail" data-tab="mail" aria-controls="panel-mail" aria-selected="false" tabindex="-1">Rapports et e-mails <span id="mailBadge" class="tbadge">0</span></button>
+    <button role="tab" id="tab-set" data-tab="set" aria-controls="panel-set" aria-selected="false" tabindex="-1">Paramètres</button>
+  </nav>
+
+  <!-- TEMPS REEL -->
+  <section id="panel-rt" class="tabpanel rt" role="tabpanel" aria-labelledby="tab-rt">
+    <div class="panel inc">
+      <h2>Provoquer un incident</h2>
+      <div class="inc-group">
+        <div class="inc-row"><label for="wellSel">Sur un puits</label><select id="wellSel"></select><span id="wellTypeLab" class="muted"></span></div>
+        <div class="inc-btns" id="wellIncBtns"></div>
+      </div>
+      <div class="inc-group">
+        <div class="inc-row"><label for="manSel">Sur un groupe de puits</label><select id="manSel"></select><span id="manLab" class="muted"></span></div>
+        <div class="inc-btns" id="groupIncBtns"></div>
+      </div>
+      <div class="inc-btns"><button id="resetAll" class="btn quiet" type="button">Tout rétablir</button></div>
+      <p class="hint">L'agent ne sait pas quel incident vous avez choisi : il doit le trouver dans les données, relier les puits touchés entre eux, puis prévenir par SMS et e-mail.</p>
+    </div>
+
+    <div class="panel wells">
+      <h2>Puits surveillés <span class="count" id="wellSummary"></span></h2>
+      <div class="well-head" aria-hidden="true"><span>Puits</span><span>Pression tête</span><span>P. annulaire 9 5/8</span><span>Injection</span><span>Temp. tête</span><span>RTU radio</span></div>
+      <div id="wellList"></div>
+      <p class="hint">Cliquez sur un puits pour voir son détail et demander une analyse.</p>
+    </div>
+
+    <section class="phone-wrap" aria-label="Téléphone d'astreinte">
+      <div class="phone">
+        <div class="lock">
+          <span id="phNight" class="ph-badge">Nuit</span>
+          <div id="phTime" class="ph-time">02:50</div>
+          <div id="phDate" class="ph-date">mardi 19 mai</div>
+        </div>
+        <div class="roster" id="roster"></div>
+        <div class="notifs" id="smsList" aria-live="polite"><p class="empty">Aucun SMS. Tout est normal.</p></div>
+      </div>
+    </section>
+
+    <div class="panel detail">
+      <h2 id="dTitle">Détail du puits</h2>
+      <p id="dMeta" class="muted" style="margin:0 0 6px"></p>
+      <svg id="dChart" class="chart" viewBox="0 0 760 230" role="img" aria-label="Évolution des pressions sur deux heures"></svg>
+      <div class="legend"><span class="l-p">Pression tête</span><span class="l-man">Pression manifold</span><span class="l-ann">Pression annulaire 9 5/8</span><span class="l-th">Seuils d'alarme</span></div>
+      <div id="dStatus" class="chips"></div>
+      <div id="dAlarms"></div>
+    </div>
+
+    <div class="panel journal">
+      <h2>Journal de l'agent <span class="count"><span id="jCount">0</span> événements</span></h2>
+      <ol class="jlist" id="journal"></ol>
+    </div>
+  </section>
+
+  <!-- DECLIN -->
+  <section id="panel-decl" class="tabpanel decl" role="tabpanel" aria-labelledby="tab-decl" hidden>
+    <div class="panel">
+      <h2>Déclin de pression sur un an <span class="count" id="declRange"></span></h2>
+      <p class="hint" style="margin:0 0 10px">L'agent calcule la pression moyenne de chaque jour, retire les jours de fermeture, de lavage et de changement de duse, puis compare la dernière semaine, 30 jours, 60 jours et l'année. Vitesses en bar par mois.</p>
+      <div class="tscroll">
+        <table class="dt">
+          <thead><tr><th>Puits</th><th>Manifold</th><th class="num">P. actuelle</th><th class="num">7 j (écart)</th><th class="num">30 j</th><th class="num">60 j</th><th class="num">1 an (écart)</th><th>Diagnostic</th><th>Pression minimale atteinte</th></tr></thead>
+          <tbody id="declBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel">
+      <h2 id="declTitle">Puits</h2>
+      <div class="seg" role="group" aria-label="Période du graphique" id="winSeg">
+        <button class="btn" type="button" data-win="7" aria-pressed="false">7 jours</button>
+        <button class="btn" type="button" data-win="30" aria-pressed="false">30 jours</button>
+        <button class="btn" type="button" data-win="60" aria-pressed="true">60 jours</button>
+        <button class="btn" type="button" data-win="365" aria-pressed="false">1 an</button>
+      </div>
+      <svg id="declChart" class="chart" viewBox="0 0 760 290" role="img" aria-label="Pression tête journalière et prévision" style="margin-top:10px"></svg>
+      <div class="legend"><span class="l-p">Pression tête journalière</span><span class="l-reg">Tendance calculée</span><span class="l-fc">Prévision</span><span class="l-th">Pression minimale pour débiter</span></div>
+      <div id="declText" class="notes"></div>
+      <div class="ai-row">
+        <button id="declReportBtn" class="btn" type="button">Envoyer le rapport de déclin par e-mail</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PERFORMANCE DES ALARMES -->
+  <section id="panel-perf" class="tabpanel" role="tabpanel" aria-labelledby="tab-perf" hidden>
+    <div class="panel">
+      <h2>Performance du système d'alarmes <span class="count" id="perfSpan"></span></h2>
+      <p class="hint" style="margin:0 0 12px">Les cibles viennent des références du métier : EEMUA 191 recommande en marche normale moins d'une alarme toutes les 10 minutes par opérateur, et parle d'inondation d'alarmes au-delà de 10 alarmes en 10 minutes. ISA 18.2 appelle « suppression par conception » le fait de masquer les alarmes secondaires dont la cause est déjà signalée : c'est exactement ce que fait le regroupement de l'agent.</p>
+      <div class="kpis" id="perfKpis"></div>
+      <svg id="perfChart" class="chart" viewBox="0 0 760 240" role="img" aria-label="Alarmes par tranche de 10 minutes" style="margin-top:12px"></svg>
+      <div class="legend"><span class="l-raw">Détections brutes</span><span class="l-vis">Alarmes présentées à l'opérateur</span><span class="l-th">Seuil d'inondation (10 par 10 min)</span></div>
+      <div class="tscroll"><table class="dt" id="perfTable"><thead><tr><th>Indicateur</th><th class="num">Sans l'agent</th><th class="num">Avec l'agent</th><th>Cible</th><th>État</th></tr></thead><tbody id="perfBody"></tbody></table></div>
+      <h3>Puits et équipements les plus bruyants</h3>
+      <div id="perfBad"></div>
+      <div class="ai-row">
+        <button id="perfReport" class="btn" type="button">Envoyer ce bilan par e-mail</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- RAPPORTS -->
+  <section id="panel-mail" class="tabpanel" role="tabpanel" aria-labelledby="tab-mail" hidden>
+    <div class="mail-grid">
+      <div class="panel">
+        <h2>Rapports automatiques</h2>
+        <p style="margin:0 0 6px">Le rapport journalier part chaque jour à <strong id="rHour">07:00</strong> (heure simulée) vers :</p>
+        <p class="to-list" id="rTo" style="margin:0 0 12px"></p>
+        <div class="inc-btns">
+          <button id="reportNow" class="btn primary" type="button">Envoyer le rapport journalier maintenant</button>
+          <button id="declReportBtn2" class="btn" type="button">Envoyer le rapport de déclin</button>
+          <button id="handoverBtn" class="btn" type="button">Envoyer la fiche de relève de quart</button>
+          <button id="gotoSet" class="btn quiet" type="button">Modifier les destinataires</button>
+        </div>
+        <p class="hint">Le simulateur n'envoie pas les e-mails lui-même. « Ouvrir dans Gmail » prépare le message dans votre Gmail : vous n'avez plus qu'à appuyer sur Envoyer. Si le lien est bloqué, utilisez « Copier ». Dans le vrai système, le serveur de l'agent enverra les e-mails automatiquement.</p>
+      </div>
+      <div class="panel">
+        <h2>Boîte d'envoi <span class="count"><span id="mCount">0</span> e-mails</span></h2>
+        <div class="seg" role="group" aria-label="Filtrer les e-mails" id="mailFilter" style="margin-bottom:8px">
+          <button class="btn" type="button" data-f="all" aria-pressed="true">Tous</button>
+          <button class="btn" type="button" data-f="alarm" aria-pressed="false">Alarmes</button>
+          <button class="btn" type="button" data-f="report" aria-pressed="false">Rapports</button>
+        </div>
+        <div id="mailList"><p class="empty">Aucun e-mail pour l'instant.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PARAMETRES -->
+  <section id="panel-set" class="tabpanel" role="tabpanel" aria-labelledby="tab-set" hidden>
+    <div class="panel">
+      <h2>Paramètres de l'agent</h2>
+      <p class="hint" style="margin:0 0 14px">Enregistrés dans ce navigateur uniquement.</p>
+      <div class="form-grid">
+        <div class="field"><label for="fReportTo">Destinataires du rapport journalier</label><textarea id="fReportTo" rows="2"></textarea><small>Séparez les adresses par des virgules.</small></div>
+        <div class="field"><label for="fAlarmTo">Destinataires des e-mails d'alarme</label><textarea id="fAlarmTo" rows="2"></textarea></div>
+        <div class="field"><label for="fHour">Heure du rapport automatique</label><select id="fHour"><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option></select></div>
+        <div class="field"><label for="fEsc">Escalade si personne ne répond après</label><select id="fEsc"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option></select></div>
+        <div class="field"><label for="fChute">Alarme de chute de pression à partir de</label><select id="fChute"><option value="15">15 %</option><option value="20">20 %</option><option value="25">25 %</option><option value="30">30 %</option></select></div>
+        <div class="field"><label for="fSurp">Alarme de surpression à partir de</label><select id="fSurp"><option value="30">+30 %</option><option value="40">+40 %</option><option value="50">+50 %</option></select></div>
+        <div class="field"><label for="fRtu">Alarme de perte radio après</label><select id="fRtu"><option value="3">3 min</option><option value="5">5 min</option><option value="10">10 min</option></select></div>
+        <div class="field"><label for="fAnn">Seuil de diagnostic annulaire</label><select id="fAnn"><option value="5">5 Barg</option><option value="6.9">6,9 Barg (100 psi, API RP 90)</option><option value="10">10 Barg</option></select></div>
+        <div class="field"><label for="fPrice">Prix du baril utilisé pour chiffrer les pertes</label><select id="fPrice"><option value="60">60 USD</option><option value="70">70 USD</option><option value="80">80 USD</option><option value="90">90 USD</option></select><small>Sert à convertir la production différée en dollars dans les rapports.</small></div>
+        <div class="field"><label for="fTheme">Affichage</label><select id="fTheme"><option value="auto">Automatique</option><option value="light">Clair</option><option value="dark">Sombre</option></select></div>
+        <div class="field check"><label><input type="checkbox" id="fSmsWarn"> Envoyer aussi un SMS pour les avertissements</label><small>Désactivé par défaut, pour ne réveiller personne la nuit sans urgence.</small></div>
+      </div>
+      <h3>Passerelle SMS réelle (pour la démonstration)</h3>
+      <p class="hint" style="margin:0 0 10px">Permet d'envoyer de vrais SMS pendant la démonstration, depuis un téléphone Android qui sert de passerelle. Il faut lancer le petit programme « passerelle-sms.py » sur le PC et ouvrir cette page depuis ce programme. Mettez de vrais numéros dans la liste d'astreinte ci-dessous. Ne fonctionne pas dans la version en ligne de la page.</p>
+      <div class="form-grid">
+        <div class="field check"><label><input type="checkbox" id="fSmsReal"> Envoyer aussi de vrais SMS (urgences seulement)</label><small>Les SMS simulés continuent de s'afficher sur le téléphone à l'écran.</small></div>
+        <div class="field"><label for="fSmsUrl">Adresse de la passerelle</label><input type="text" id="fSmsUrl" placeholder="http://localhost:8787/sms"><small>Laissez /sms si la page est servie par le programme.</small></div>
+        <div class="field"><label for="fSmsTestNum">Test d'envoi</label><input type="text" id="fSmsTestNum" placeholder="+213 6XX XX XX XX"><button id="smsTest" class="btn" type="button" style="margin-top:8px">Envoyer un SMS de test</button><small id="smsTestOut"></small></div>
+      </div>
+      <h3>Liste d'astreinte, dans l'ordre d'escalade</h3>
+      <div id="rosterEdit"></div>
+      <div class="inc-btns" style="margin-top:12px">
+        <button id="saveSet" class="btn primary" type="button">Enregistrer</button>
+        <button id="resetSet" class="btn quiet" type="button">Revenir aux valeurs par défaut</button>
+        <span id="setStatus" role="status"></span>
+      </div>
+    </div>
+  </section>
+<p class="hint" style="text-align:center;margin:8px 0 0">Prototype indépendant et open source (licence MIT). Données fictives, aucune connexion à un système réel. Ne remplace aucun système de sécurité.</p>
+</main>
+
+<script>
+(function(){
+'use strict';
+/* =================== Settings =================== */
+const START = new Date(2026,4,19,2,50,0).getTime();
+const DAY = 86400000;
+const HIST_END = new Date(2026,4,18,12,0,0).getTime();
+const KEY = 'agent-puits-parametres-v2';
+const DEFAULTS = {
+  reportTo:'destinataire@exemple.dz',
+  alarmTo:'salle.controle@exemple.dz, ingenieur.production@exemple.dz',
+  reportHour:7, escMin:10, smsWarn:false, thChute:20, thSurp:40, thRtu:5, thAnn:6.9, theme:'auto', oilPrice:70,
+  smsReal:false, smsUrl:'http://localhost:8787/sms',
+  roster:[
+    {name:'K. Benali', role:"Technicien d'astreinte", tel:'+213 6•• •• •• 41'},
+    {name:'S. Hamdi', role:'Chef de quart', tel:'+213 7•• •• •• 18'},
+    {name:'A. Mansouri', role:'Superviseur production', tel:'+213 5•• •• •• 07'}
+  ]
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+function loadSettings(){
+  const s = clone(DEFAULTS);
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){
+      const o = JSON.parse(raw);
+      for(const k of Object.keys(DEFAULTS)) if(k !== 'roster' && o[k] !== undefined && typeof o[k] === typeof DEFAULTS[k]) s[k] = o[k];
+      if(Array.isArray(o.roster) && o.roster.length === 3) s.roster = o.roster.map((p,i) => ({name:String(p.name || DEFAULTS.roster[i].name), role:String(p.role || DEFAULTS.roster[i].role), tel:String(p.tel || '')}));
+    }
+  }catch(e){}
+  return s;
+}
+let S = loadSettings();
+function saveSettings(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); return true; }catch(e){ return false; } }
+
+/* =================== Helpers =================== */
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const dateAt = m => new Date(START + m*60000);
+const hhmm = m => { const d = dateAt(m); return pad(d.getHours())+':'+pad(d.getMinutes()); };
+const ddmmyyyy = m => { const d = dateAt(m); return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear(); };
+const dayDate = d => new Date(HIST_END - (364-d)*DAY);
+const ddmm = d => { const x = dayDate(d); return pad(x.getDate())+'/'+pad(x.getMonth()+1); };
+const ddmmyy = d => { const x = dayDate(d); return pad(x.getDate())+'/'+pad(x.getMonth()+1)+'/'+x.getFullYear(); };
+const fr = (v,d=1) => Number(v).toLocaleString('fr-FR',{minimumFractionDigits:d,maximumFractionDigits:d});
+const sg = (v,d=1) => (v > 0.0001 ? '+' : v < -0.0001 ? '−' : '') + fr(Math.abs(v), d);
+const noise = () => (Math.random()+Math.random()+Math.random()-1.5)*2;
+const clamp01 = x => Math.min(Math.max(x,0),1);
+const mean = a => a.length ? a.reduce((s,x)=>s+x,0)/a.length : 0;
+const std = a => { const mu = mean(a); return Math.sqrt(mean(a.map(x=>(x-mu)*(x-mu)))); };
+const median = a => { if(!a.length) return 0; const s = [...a].sort((x,y)=>x-y), k = Math.floor(s.length/2); return s.length % 2 ? s[k] : (s[k-1]+s[k])/2; };
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function linreg(xs, ys){
+  const mx = mean(xs), my = mean(ys); let num = 0, den = 0;
+  for(let i=0;i<xs.length;i++){ num += (xs[i]-mx)*(ys[i]-my); den += (xs[i]-mx)*(xs[i]-mx); }
+  const slope = den ? num/den : 0; return {slope, icpt: my - slope*mx};
+}
+function rng(seed){ return function(){ seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed>>>15, 1|seed); t = t + Math.imul(t ^ t>>>7, 61|t) ^ t; return ((t ^ t>>>14)>>>0)/4294967296; }; }
+const emailList = s => String(s).split(/[,;\s]+/).map(x=>x.trim()).filter(Boolean);
+
+/* =================== Field definition =================== */
+const TYPE_LAB = {gl:'Gas lift', eru:'Éruptif', eau:'Éruptif, eau de dessalage'};
+const MAN_DEF = [
+  {id:'MAN-A', rep:'R1', pMan:11.8, pGL:169.1},
+  {id:'MAN-B', rep:'R2', pMan:9.6, pGL:152.3},
+  {id:'MAN-C', rep:'R3', pMan:12.9, pGL:161.0}
+];
+const WELL_DEF = [
+  {id:'PUITS-01', man:'MAN-A', type:'gl', p:22.8, t:35.9, ann:1.2, q:20000, qo:46, maasp:48},
+  {id:'PUITS-02', man:'MAN-A', type:'gl', p:19.6, t:39.7, ann:0.8, q:22000, qo:38, maasp:48},
+  {id:'PUITS-03', man:'MAN-A', type:'eru', p:27.4, t:41.8, ann:2.1, qo:72, maasp:55},
+  {id:'PUITS-04', man:'MAN-A', type:'eau', p:26.1, t:38.4, ann:1.5, qe:32, qo:58, maasp:52},
+  {id:'PUITS-05', man:'MAN-B', type:'gl', p:18.4, t:41.2, ann:0.6, q:40000, qo:64, maasp:45},
+  {id:'PUITS-06', man:'MAN-B', type:'gl', p:17.9, t:37.5, ann:1.9, q:30000, qo:41, maasp:45},
+  {id:'PUITS-07', man:'MAN-B', type:'eru', p:24.9, t:44.1, ann:1.1, qo:55, maasp:52},
+  {id:'PUITS-08', man:'MAN-B', type:'eau', p:21.3, t:40.2, ann:2.4, qe:28, qo:33, maasp:50},
+  {id:'PUITS-09', man:'MAN-C', type:'gl', p:24.3, t:33.5, ann:0.9, q:15000, qo:29, maasp:47},
+  {id:'PUITS-10', man:'MAN-C', type:'gl', p:20.8, t:36.2, ann:1.3, q:25000, qo:44, maasp:47},
+  {id:'PUITS-11', man:'MAN-C', type:'eru', p:29.2, t:42.7, ann:1.7, qo:81, maasp:58},
+  {id:'PUITS-12', man:'MAN-C', type:'eau', p:23.6, t:39.1, ann:0.7, qe:36, qo:49, maasp:50}
+];
+const BBL = 6.2898, ANN_DT = 6.9;
+const DECL = {
+  'PUITS-01':{rate:-0.35}, 'PUITS-02':{rate:-0.3}, 'PUITS-03':{rate:-0.6, accelFrom:290, accelRate:-2.2},
+  'PUITS-04':{rate:-0.3, lavage:[95,205,318]}, 'PUITS-05':{rate:-0.25}, 'PUITS-06':{rate:-0.2, duseDay:180, duseStep:2.5},
+  'PUITS-07':{rate:-1.7}, 'PUITS-08':{rate:-0.3, driftFrom:320, driftRate:0.065}, 'PUITS-09':{rate:-0.3},
+  'PUITS-10':{rate:-0.4}, 'PUITS-11':{rate:-0.1}, 'PUITS-12':{rate:-0.45, stepDay:250, step:-3.5}
+};
+const WELL_INC = [
+  {k:'chute', lab:'Chute de pression tête'},
+  {k:'surp', lab:'Surpression en tête'},
+  {k:'gl', lab:'Arrêt injection gas lift', types:['gl']},
+  {k:'eau', lab:'Arrêt eau de dessalage', types:['eau']},
+  {k:'ann', lab:'Pression annulaire en hausse'},
+  {k:'instab', lab:'Écoulement instable'},
+  {k:'capteur', lab:'Capteur défaillant'},
+  {k:'batterie', lab:'Batterie RTU faible'},
+  {k:'rtu', lab:'Perte radio RTU'},
+  {k:'sdv', lab:'Fermeture vanne de sécurité'},
+  {k:'feu', lab:'Détection feu'},
+  {k:'intrusion', lab:'Intrusion sur le site'},
+  {k:'carte', lab:'Défaut carte E/S RTU'}
+];
+const GROUP_INC = [
+  {k:'rep', lab:'Panne du répéteur radio'},
+  {k:'glnet', lab:'Panne du réseau gas lift'},
+  {k:'collecte', lab:'Restriction ligne de collecte'}
+];
+const INC_LAB = Object.fromEntries([...WELL_INC, ...GROUP_INC].map(x => [x.k, x.lab.toLowerCase()]));
+const JLAB = {detect:'Détection', analyse:'Analyse', sms:'SMS', mail:'E-mail', escal:'Escalade', ack:'Acquittement', clear:"Fin d'alarme", incident:'Simulation', info:'Agent', group:'Regroupement'};
+const SEV = {avert:1, urgence:2};
+
+/* =================== State =================== */
+let simMin = 0, speed = 1, running = true, timer = null, currentTab = 'rt';
+let alarmSeq = 0, mailSeq = 0, smsCount = 0, jCount = 0;
+const allAlarms = [], mails = [];
+const manifolds = MAN_DEF.map(d => ({kind:'man', id:d.id, label:'Manifold '+d.id, rep:d.rep, base:{pMan:d.pMan, pGL:d.pGL}, trend:{pMan:d.pMan, pGL:d.pGL}, cur:{pMan:d.pMan, pGL:d.pGL}, hist:[], incident:null, incT:0, alarms:{}, okCount:{}}));
+const manById = Object.fromEntries(manifolds.map(m => [m.id, m]));
+const repeaters = [...new Set(MAN_DEF.map(d => d.rep))].map(id => ({kind:'rep', id, label:'Répéteur '+id, down:false, incT:0, alarms:{}, okCount:{}}));
+const repById = Object.fromEntries(repeaters.map(r => [r.id, r]));
+const wells = WELL_DEF.map((d,i) => {
+  const M = manById[d.man];
+  const base = {p:d.p, t:d.t, ann:d.ann, q:d.q||0, qe:d.qe||0, pinj: d.type==='gl' ? M.base.pGL - 2.1 - i*0.1 : 0, bat:27.2, qo:d.qo, maasp:d.maasp};
+  return {kind:'well', id:d.id, label:d.id, type:d.type, man:d.man, rep:M.rep, base, trend:clone(base), cur:Object.assign(clone(base), {valve: d.type==='gl' ? 100 : 0}),
+    phase:i*1.7, period:7 + (i%5)*1.4, hist:{p:[], ann:[], man:[], bat:[]}, incident:null, incT:0, lastUpdate:0, starve:0,
+    alarms:{}, okCount:{}, metrics:null, sdv:true, fire:false, intrus:false, io:true,
+    stats:{pmin:Infinity, pmax:-Infinity, psum:0, n:0, online:0, total:0, defer:0, prod:0}, el:null, decl:null};
+});
+const wellById = Object.fromEntries(wells.map(w => [w.id, w]));
+const manOf = w => manById[w.man];
+const repOf = w => repById[w.rep];
+
+/* =================== Process simulation =================== */
+function solarBat(m){ const h = dateAt(m).getHours(); return (h >= 7 && h < 19) ? 27.8 : 26.6; }
+function commDown(w){ return w.incident === 'rtu' || repOf(w).down || w.trend.bat < 22; }
+function stepManifold(M, m){
+  const e = M.incident ? m - M.incT : 0;
+  let pMan = M.base.pMan, pGL = M.base.pGL;
+  if(M.incident === 'collecte') pMan *= 1 + 0.95*clamp01(e/12);
+  if(M.incident === 'glnet') pGL *= 1 - 0.7*clamp01(e/2);
+  M.trend.pMan += (pMan - M.trend.pMan)*0.45;
+  M.trend.pGL += (pGL - M.trend.pGL)*0.5;
+  M.cur.pMan = M.trend.pMan + noise()*0.08;
+  M.cur.pGL = M.trend.pGL + noise()*0.4;
+  M.hist.push(M.cur.pMan); if(M.hist.length > 240) M.hist.shift();
+}
+function stepWell(w, m){
+  const M = manOf(w), b = w.base, k = w.incident, e = k ? m - w.incT : 0;
+  const t = {p:b.p, t:b.t, ann:b.ann, q:b.q, qe:b.qe, pinj:b.pinj, bat:solarBat(m)};
+  if(w.type === 'gl'){
+    const net = M.trend.pGL / M.base.pGL;
+    t.q = b.q * clamp01((net - 0.45)/0.35);
+    t.pinj = b.pinj * net;
+    if(k === 'gl'){ t.q *= 1 - clamp01(e/3); t.pinj *= 1 - 0.6*clamp01(e/10); }
+    if(w.cur.q < 0.3*b.q) w.starve++; else w.starve = Math.max(0, w.starve - 2);
+    t.p *= 1 - 0.4*clamp01((w.starve - 8)/35);
+    t.t -= 3*clamp01((w.starve - 8)/35);
+  }
+  if(k === 'eau') t.qe = b.qe*(1 - clamp01(e/2));
+  if(k === 'chute'){ t.p *= 1 - 0.45*clamp01(e/20); t.t -= 4*clamp01(e/20); }
+  if(k === 'surp'){ t.p *= 1 + 0.75*clamp01(e/15); t.t += 1.5*clamp01(e/15); }
+  if(k === 'ann') t.ann = b.ann + (b.maasp*0.82 - b.ann)*clamp01(e/18);
+  if(k === 'batterie') t.bat = 27.2 - 6.5*clamp01(e/40);
+  w.sdv = k !== 'sdv'; w.fire = k === 'feu'; w.intrus = k === 'intrusion'; w.io = k !== 'carte';
+  if(!w.sdv){ t.p = b.p*(1 + 0.55*clamp01(e/12)); t.q = 0; t.qe = 0; }
+  t.p += M.trend.pMan - M.base.pMan;
+  for(const key of ['p','t','ann','q','qe','pinj','bat']) w.trend[key] += (t[key] - w.trend[key])*0.35;
+  if(commDown(w)) return false;
+  const amp = k === 'instab' ? 0.8 + 5.5*clamp01(e/10) : 0.8;
+  const per = k === 'instab' ? 6 : w.period;
+  w.cur.p = Math.max(0, w.trend.p + amp*Math.sin(2*Math.PI*(m + w.phase*3)/per) + noise()*0.25);
+  if(k === 'capteur') w.cur.p = -0.18 + noise()*0.004;
+  w.cur.t = w.trend.t + noise()*0.12;
+  w.cur.ann = Math.max(0, w.trend.ann + noise()*0.06);
+  w.cur.q = w.type === 'gl' ? Math.max(0, w.trend.q + (w.trend.q > 500 ? noise()*90 : 0)) : 0;
+  w.cur.qe = w.type === 'eau' ? Math.max(0, w.trend.qe + (w.trend.qe > 1 ? noise()*0.4 : 0)) : 0;
+  w.cur.pinj = w.type === 'gl' ? w.trend.pinj + noise()*0.5 : 0;
+  w.cur.bat = w.trend.bat + noise()*0.03;
+  const pFlow = M.base.pMan + 2;
+  let f = w.sdv ? clamp01((w.trend.p - pFlow)/(b.p - pFlow)) : 0;
+  if(w.type === 'gl') f *= 0.35 + 0.65*clamp01(w.trend.q/b.q);
+  if(w.type === 'eau' && w.trend.qe < 0.3*b.qe) f *= 0.97;
+  w.cur.qo = b.qo*Math.min(f, 1.05);
+  w.lastUpdate = m;
+  const H = w.hist;
+  H.p.push(w.cur.p); H.ann.push(w.cur.ann); H.man.push(M.cur.pMan); H.bat.push(w.cur.bat);
+  for(const key of ['p','ann','man','bat']) if(H[key].length > 240) H[key].shift();
+  return true;
+}
+
+/* =================== Detection rules =================== */
+function evaluateAll(){
+  for(const R of repeaters){
+    const ws = wells.filter(w => w.rep === R.id), silent = ws.filter(w => simMin - w.lastUpdate >= S.thRtu);
+    rule(R, 'REP', silent.length >= 2, 'urgence', silent.length === 0, 3, {ws:silent});
+  }
+  for(const M of manifolds){
+    const recent = mean(M.hist.slice(-3));
+    rule(M, 'MAN_HAUTE', recent > 1.35*M.base.pMan, 'urgence', recent < 1.1*M.base.pMan);
+    rule(M, 'GLNET', M.cur.pGL < 0.6*M.base.pGL, 'urgence', M.cur.pGL > 0.85*M.base.pGL);
+  }
+  for(const w of wells) evaluateWell(w);
+}
+function evaluateWell(w){
+  const age = simMin - w.lastUpdate, b = w.base, fresh = age === 0;
+  const rtuUrg = Math.max(15, S.thRtu + 10);
+  rule(w, 'BATT', fresh && w.cur.bat < 24, 'avert', fresh && w.cur.bat > 25);
+  rule(w, 'RTU', age >= S.thRtu, age >= rtuUrg ? 'urgence' : 'avert', fresh);
+  if(!fresh) return;
+  const h = w.hist.p;
+  rule(w, 'CAPTEUR', w.cur.p < 0, 'avert', w.cur.p > 0.5, 6);
+  rule(w, 'SDV', !w.sdv, 'urgence', w.sdv);
+  rule(w, 'FEU', w.fire, 'urgence', !w.fire);
+  rule(w, 'INTRUS', w.intrus, 'urgence', !w.intrus);
+  rule(w, 'CARTE', !w.io, 'avert', w.io);
+  rule(w, 'ANN', w.cur.ann > S.thAnn, w.cur.ann > 0.7*b.maasp ? 'urgence' : 'avert', w.cur.ann < 0.85*S.thAnn);
+  if(w.type === 'gl') rule(w, 'GL_ARRET', w.cur.q < 0.3*b.q, 'urgence', w.cur.q > 0.8*b.q);
+  if(w.type === 'eau'){ const a = w.alarms.EAU_ARRET; rule(w, 'EAU_ARRET', w.cur.qe < 0.3*b.qe, a && simMin - a.t0 >= 30 ? 'urgence' : 'avert', w.cur.qe > 0.8*b.qe); }
+  if(w.alarms.CAPTEUR || h.slice(-21).some(v => v < 0)) return;
+  const recent = mean(h.slice(-5));
+  const past = h.length >= 40 ? mean(h.slice(-40,-30)) : b.p;
+  const last = h.slice(-21), diffs = [];
+  for(let i=1;i<last.length;i++) diffs.push(last[i] - last[i-1]);
+  const w20 = h.slice(-20);
+  let flips = 0, lastSign = 0; for(const dv of diffs){ if(Math.abs(dv) < 1.2) continue; const sgn = Math.sign(dv); if(lastSign && sgn !== lastSign) flips++; lastSign = sgn; }
+  w.metrics = {recent, past, dstd:std(diffs), flips, amp:(Math.max(...w20) - Math.min(...w20))/2};
+  const th = S.thChute/100, ts = S.thSurp/100;
+  rule(w, 'P_CHUTE', (recent < (1-th)*past && recent < 0.9*b.p) || recent < (0.9-th)*b.p, 'urgence', recent >= (1 - th*0.75)*b.p);
+  rule(w, 'P_HAUTE', recent > (1+ts)*b.p, 'urgence', recent < (1 + ts*0.4)*b.p);
+  rule(w, 'INSTAB', w.metrics.dstd > 2 && flips >= 4, 'avert', w.metrics.dstd < 1 || flips < 2);
+}
+function rule(T, code, active, sev, clear, need = 3, ctx){
+  const a = T.alarms[code];
+  if(active){
+    T.okCount[code] = 0;
+    if(!a) newAlarm(T, code, sev, ctx);
+    else if(SEV[sev] > SEV[a.severity]) upgradeAlarm(T, a, sev, ctx);
+    else if(ctx && code === 'REP' && ctx.ws.length !== a.nWells){ const i = info(T, code, ctx); a.value = i.value; a.nWells = ctx.ws.length; }
+  } else if(a){
+    if(clear){ T.okCount[code] = (T.okCount[code] || 0) + 1; if(T.okCount[code] >= need) clearAlarm(T, a); }
+    else T.okCount[code] = 0;
+  }
+}
+function findParent(T, code){
+  if(T.kind !== 'well') return null;
+  const M = manOf(T), R = repOf(T);
+  if(code === 'RTU') return R.alarms.REP || null;
+  if(code === 'GL_ARRET') return T.alarms.SDV || M.alarms.GLNET || null;
+  if(code === 'EAU_ARRET') return T.alarms.SDV || null;
+  if(code === 'P_HAUTE') return T.alarms.SDV || M.alarms.MAN_HAUTE || null;
+  if(code === 'P_CHUTE') return T.alarms.SDV || T.alarms.GL_ARRET || M.alarms.GLNET || null;
+  if(code === 'SDV') return T.alarms.FEU || null;
+  return null;
+}
+const rootOf = a => { let r = a; while(r.parent) r = r.parent; return r; };
+
+/* =================== Analysis (rules) =================== */
+function info(T, code, ctx){
+  if(code === 'REP'){
+    const ws = (ctx && ctx.ws) || wells.filter(w => w.rep === T.id && simMin - w.lastUpdate >= S.thRtu);
+    const ids = ws.map(w => w.id).join(', ');
+    const same = ws.length > 0 && ws.every(w => w.lastUpdate === ws[0].lastUpdate);
+    const t0 = ws.length ? hhmm(Math.min(...ws.map(w => w.lastUpdate))) : hhmm(simMin);
+    return {title:'Panne probable du répéteur radio', value:`${ws.length} puits sans données (${ids})`,
+      sms:`Un seul SMS pour ${ws.length} puits. Vérifier le répéteur ${T.id}.`,
+      diag:`${ws.length} puits reliés au répéteur ${T.id} (${ids}) ne transmettent plus ${same ? 'depuis la même minute' : 'depuis presque le même moment'} (${t0}). Plusieurs pannes de RTU indépendantes au même instant sont très peu probables : la cause la plus probable est le répéteur ${T.id} (alimentation, batterie, antenne ou radio). Les alarmes de chaque puits sont rattachées à celle-ci pour ne pas envoyer ${ws.length} SMS.`,
+      action:`Envoyer une équipe vérifier le répéteur ${T.id}. Les puits ${ids} ne sont plus surveillés en attendant.`};
+  }
+  if(code === 'MAN_HAUTE'){
+    const p = mean(T.hist.slice(-3)), pct = Math.round((p/T.base.pMan - 1)*100);
+    const ids = wells.filter(w => w.man === T.id).map(w => w.id).join(', ');
+    return {title:'Restriction sur la ligne de collecte', value:`manifold ${fr(p)} Barg (normale ${fr(T.base.pMan)})`,
+      sms:'Tous les puits du manifold montent. Vérifier la ligne de collecte.',
+      diag:`La pression du manifold ${T.id} monte à ${fr(p)} Barg (+${pct} %) et les puits raccordés (${ids}) suivent la même hausse. Quand tous les puits d'un manifold montent ensemble, le problème n'est pas dans les puits mais en aval : vanne partiellement fermée, restriction ou bouchage de la ligne de collecte, ou problème au centre de traitement. Les alarmes de surpression des puits sont rattachées à celle-ci.`,
+      action:`Vérifier les vannes et la ligne de collecte en aval du manifold ${T.id}.`};
+  }
+  if(code === 'GLNET'){
+    const ids = wells.filter(w => w.man === T.id && w.type === 'gl').map(w => w.id).join(', ');
+    return {title:'Panne du réseau gas lift', value:`réseau ${fr(T.cur.pGL)} Barg (normale ${fr(T.base.pGL)})`,
+      sms:`Puits gas lift ${ids} touchés. Vérifier compresseur et réseau.`,
+      diag:`La pression du réseau gas lift du manifold ${T.id} est tombée à ${fr(T.cur.pGL)} Barg au lieu de ${fr(T.base.pGL)}. Tous les puits gas lift de ce manifold (${ids}) vont perdre leur injection en même temps. La cause est côté réseau (compresseur, vanne principale ou fuite sur la ligne), pas dans les puits. Sans injection, leur pression tête va baisser dans les 10 à 40 prochaines minutes : l'agent rattachera ces baisses à cette alarme.`,
+      action:`Contrôler le compresseur et la ligne principale gas lift du manifold ${T.id}.`};
+  }
+  const w = T, b = w.base, c = w.cur, M = manOf(w), m = w.metrics || {recent:c.p, past:b.p, dstd:0, amp:0};
+  switch(code){
+    case 'P_CHUTE': {
+      const pct = Math.round((1 - m.recent/b.p)*100), value = `${fr(m.recent)} Barg (normale ${fr(b.p)})`;
+      const gl = w.alarms.GL_ARRET || M.alarms.GLNET;
+      if(gl) return {title:'Chute de pression tête', value, sms:"Suite à l'arrêt gas lift. Risque d'arrêt du puits.",
+        diag:`La pression tête a baissé de ${pct} % depuis l'arrêt de l'injection gas lift détecté à ${hhmm(rootOf(gl).t0)}. Sans gas lift, le puits perd son débit et risque de s'arrêter. Ce n'est pas un nouveau problème : c'est la conséquence de l'alarme « ${rootOf(gl).title} ».`,
+        action:"Rétablir l'injection gas lift en priorité."};
+      if(w.type === 'eau' && w.alarms.EAU_ARRET) return {title:'Chute de pression tête', value, sms:"Après arrêt de l'eau de dessalage. Risque de bouchage par le sel.",
+        diag:`La pression tête a baissé de ${pct} % alors que l'injection d'eau de dessalage est arrêtée depuis ${hhmm(w.alarms.EAU_ARRET.t0)}. Cause probable : début de bouchage du tubing par des dépôts de sel.`,
+        action:"Rétablir l'eau de dessalage et programmer un lavage si la pression ne remonte pas."};
+      const tDrop = c.t < b.t - 1;
+      return {title:'Chute de pression tête', value, sms: w.type === 'gl' ? 'Injection GL stable. Vérifier duse et tubing.' : 'Vérifier duse et tubing.',
+        diag:`La pression tête a baissé de ${pct} %` + (w.type === 'gl' ? ` alors que l'injection gas lift reste stable (${fr(c.q,0)} Sm³/j) : le problème vient du puits, pas du réseau gas lift.` : ` alors que la pression du manifold reste normale (${fr(M.cur.pMan)} Barg) : le problème vient du puits, pas de la collecte.`) +
+          ` Causes probables : restriction ou bouchage (sel, asphaltènes, hydrates), duse endommagée ou problème dans le tubing.` + (tDrop ? ` La température tête baisse aussi (${fr(c.t)} °C au lieu de ${fr(b.t)} °C), ce qui confirme une baisse d'écoulement.` : ''),
+        action:'Envoyer une équipe vérifier la duse et le tubing.'};
+    }
+    case 'P_HAUTE': {
+      const pct = Math.round((m.recent/b.p - 1)*100);
+      if(M.alarms.MAN_HAUTE) return {title:'Pression tête haute', value:`${fr(m.recent)} Barg (normale ${fr(b.p)})`, sms:'',
+        diag:`La pression tête monte de ${pct} % en même temps que le manifold ${M.id}. Conséquence de la restriction sur la ligne de collecte, pas un problème de ce puits.`,
+        action:`Traiter la restriction du manifold ${M.id}.`};
+      return {title:'Pression tête anormalement haute', value:`${fr(m.recent)} Barg (normale ${fr(b.p)})`, sms:'Manifold normal. Vérifier vannes et duse du puits.',
+        diag:`La pression tête atteint ${fr(m.recent)} Barg, soit +${pct} % par rapport à la normale, alors que le manifold ${M.id} reste normal (${fr(M.cur.pMan)} Barg). Le problème est donc entre la tête de puits et le manifold : vanne de la ligne du puits fermée, duse bouchée ou ligne de production obstruée. Risque de dépasser la pression de service de la ligne.`,
+        action:'Vérifier la duse, les vannes et la ligne de production du puits.'};
+    }
+    case 'GL_ARRET':
+      if(M.alarms.GLNET) return {title:"Arrêt de l'injection gas lift", value:`${fr(c.q,0)} Sm³/j (consigne ${fr(b.q,0)})`, sms:'',
+        diag:`Le débit gas lift est tombé à ${fr(c.q,0)} Sm³/j. Conséquence de la panne du réseau gas lift du manifold ${M.id}.`, action:'Traiter la panne du réseau gas lift.'};
+      return {title:"Arrêt de l'injection gas lift", value:`${fr(c.q,0)} Sm³/j (consigne ${fr(b.q,0)})`, sms:'Réseau GL normal. Vérifier vanne et ligne GL du puits.',
+        diag:`Le débit gas lift est de ${fr(c.q,0)} Sm³/j pour une consigne de ${fr(b.q,0)}, alors que la vanne GL est ouverte à 100 %. La pression du réseau gas lift reste normale (${fr(M.cur.pGL)} Barg) : le gaz est disponible mais n'entre pas dans le puits. Cause probable sur ce puits : vanne GL bloquée, orifice d'injection bouché ou fuite sur la ligne d'injection. Sans injection, la pression tête va baisser.`,
+        action:"Vérifier la vanne GL et la ligne d'injection du puits."};
+    case 'EAU_ARRET': {
+      const a = w.alarms.EAU_ARRET, dur = a ? simMin - a.t0 : 0;
+      return {title:"Arrêt de l'eau de dessalage", value:`${fr(c.qe)} m³/j (normale ${fr(b.qe)})`, sms:'Risque de dépôts de sel. Vérifier pompe et ligne eau.',
+        diag:`Le débit d'eau de dessalage est tombé à ${fr(c.qe)} m³/j. Cette eau dissout le sel dans le puits : sans elle, des dépôts peuvent se former et boucher le tubing en quelques heures ou quelques jours. ` + (dur >= 30 ? "L'arrêt dure depuis plus de 30 min : passage en urgence." : "Si l'arrêt dure plus de 30 min, l'alarme passera en urgence avec SMS."),
+        action:"Vérifier la pompe et la ligne d'eau de dessalage, puis surveiller la pression tête."};
+    }
+    case 'ANN': {
+      const pctM = Math.round(c.ann/b.maasp*100);
+      const hb = w.hist.ann, nb = Math.min(10, hb.length - 1), rate = nb > 0 ? (hb[hb.length-1] - hb[hb.length-1-nb])/nb : 0;
+      return {title:"Pression annulaire au-dessus du seuil de diagnostic", value:`9 5/8 à ${fr(c.ann)} Barg, ${pctM} % de la MAASP (${fr(b.maasp,0)} Barg)`,
+        sms:'Intégrité puits. Prévenir superviseur et HSE.',
+        diag:`La pression de l'annulaire 9 5/8 est de ${fr(c.ann)} Barg alors qu'elle est normalement de ${fr(b.ann)} Barg. Elle dépasse le seuil de diagnostic de ${fr(S.thAnn)} Barg, valeur au-delà de laquelle l'API demande un suivi et un test de purge et remontée pour distinguer une pression thermique d'une pression entretenue (SCP).` +
+          (rate > 0.05 ? ` La montée est continue, environ ${fr(rate,2)} bar par minute.` : '') +
+          ` Elle est à ${pctM} % de la MAASP du puits (${fr(b.maasp,0)} Barg). Une pression entretenue indique en général une communication : fuite de packer, de tubing ou de tête de puits. C'est un problème d'intégrité, à traiter même si la production semble normale.`,
+        action:"Prévenir le superviseur et HSE, appliquer la procédure d'intégrité (test de purge et de remontée), ne pas dépasser la MAASP."};
+    }
+    case 'SDV':
+      return {title:'Vanne de sécurité (SDV) fermée', value:'puits fermé, production arrêtée', sms:'Puits fermé. Production arrêtée. Vérifier cause SDV.',
+        diag:`La vanne de sécurité automatique du puits ${w.id} est passée en position fermée sans ordre de la salle de contrôle. Le puits ne produit plus : la perte est d'environ ${fr(w.base.qo,0)} m³ par jour, soit ${fr(w.base.qo/60,2)} m³ par minute. La pression tête monte vers la pression de fermeture, ce qui est normal quand un puits est fermé. Causes fréquentes : déclenchement pilote de sécurité (pression haute ou basse sur la ligne), perte d'air ou d'azote de commande, défaut électrique, ou déclenchement d'une sécurité feu.`,
+        action:'Trouver la cause du déclenchement avant toute réouverture, en suivant la procédure de sécurité du site.'};
+    case 'FEU':
+      return {title:'Détection feu sur le site du puits', value:'détecteur en alarme', sms:'DETECTION FEU. Alerte HSE immédiate.',
+        diag:`Le détecteur feu du puits ${w.id} est en alarme et l'alarme commune de la RTU est active. C'est la seule alarme de cette liste qui concerne directement la sécurité des personnes : tous les contacts d'astreinte sont prévenus en même temps, sans attendre l'escalade. L'agent ne commande rien : la chaîne de sécurité du puits agit seule.`,
+        action:'Appliquer le plan d\'urgence HSE du site et prévenir immédiatement le chef de quart et le service sécurité.'};
+    case 'INTRUS':
+      return {title:'Intrusion détectée sur le site du puits', value:'ouverture coffret ou dalle de fosse à batterie', sms:'Intrusion détectée. Prévenir la sécurité du site.',
+        diag:`Les contacts anti-intrusion du puits ${w.id} signalent une ouverture (porte de coffret, porte de shelter ou dalle de la fosse à batterie) en dehors de toute intervention prévue. Il est ${hhmm(simMin)}. Les vols de câbles, de batteries et de panneaux solaires sont une cause fréquente de perte de télémétrie : le signal est donc traité en urgence même sans effet immédiat sur la production.`,
+        action:'Prévenir la sécurité du site et vérifier si une intervention était programmée sur ce puits.'};
+    case 'CARTE':
+      return {title:"Défaut carte entrées/sorties de la RTU", value:'voyant état cartes E/S en défaut', sms:'Mesures du puits non fiables.',
+        diag:`La RTU du puits ${w.id} signale un défaut de ses cartes entrées/sorties (sur l'écran SCADA, le voyant « état cartes E/S RTU » passe au rouge). Les mesures peuvent être fausses ou figées : vérifier les valeurs affichées avant toute décision. Un défaut de carte fait souvent suite à un problème d'alimentation ou à une surchauffe du coffret.`,
+        action:'Programmer une intervention instrumentation sur la RTU du puits.'};
+    case 'INSTAB':
+      return {title: w.type === 'gl' ? 'Instabilité de production (heading)' : 'Écoulement instable (slugging)', value:`oscillations de ±${fr(m.amp)} Barg`, sms:'Pas de danger immédiat.',
+        diag: w.type === 'gl' ? `La pression tête oscille de ±${fr(m.amp)} Barg par cycles de quelques minutes, contre ±1 Barg en temps normal. Ce comportement, appelé heading, indique en général un débit gas lift mal réglé. Pas de danger immédiat, mais perte de production et fatigue des équipements.`
+          : `La pression tête oscille de ±${fr(m.amp)} Barg par cycles de quelques minutes. Écoulement par bouchons (slugging), souvent lié à une duse trop ouverte ou à une baisse d'énergie du puits. Pas de danger immédiat, mais perte de production.`,
+        action: w.type === 'gl' ? 'Revoir la consigne gas lift (essai à +10 %) et suivre sur 2 h.' : "Revoir l'ouverture de duse avec l'ingénieur production."};
+    case 'CAPTEUR':
+      return {title:'Capteur de pression tête défaillant', value:`valeur lue ${fr(c.p,2)} Barg`, sms:'Capteur hors service.',
+        diag:`Le capteur de pression tête envoie ${fr(c.p,2)} Barg : une pression négative est impossible sur ce puits. Le capteur ou le transmetteur est hors service (sur l'écran SCADA, ces valeurs apparaissent en violet). L'agent désactive les alarmes de pression de ce puits pour ne pas envoyer de fausses alertes et ajoute le capteur à la liste des réparations du rapport.`,
+        action:'Programmer la vérification ou le remplacement du transmetteur de pression.'};
+    case 'BATT': {
+      const hb = w.hist.bat, n = Math.min(10, hb.length - 1), rate = n > 0 ? (hb[hb.length-1-n] - hb[hb.length-1])/n : 0;
+      const eta = rate > 0.02 ? Math.max(1, Math.round((c.bat - 22)/rate)) : null;
+      return {title:'Batterie RTU faible', value:`${fr(c.bat,2)} V`, sms:'Coupure radio probable bientôt.',
+        diag:`La tension de la batterie de la RTU baisse (${fr(c.bat,2)} V` + (rate > 0.02 ? `, −${fr(rate,2)} V par minute` : '') + `). ` + (eta ? `Au rythme actuel, la RTU va s'arrêter vers ${hhmm(simMin + eta)}, dans environ ${eta} min. ` : '') + `La nuit, sans panneau solaire, une batterie usée ne tient plus. L'agent prévient avant la perte de communication.`,
+        action:'Remplacer la batterie ou vérifier le régulateur solaire de la RTU.'};
+    }
+    case 'RTU': {
+      const age = simMin - w.lastUpdate, rtuUrg = Math.max(15, S.thRtu + 10);
+      const others = wells.filter(x => x.rep === w.rep && x !== w && simMin - x.lastUpdate < 2).length;
+      if(repOf(w).alarms.REP) return {title:'Perte de communication RTU', value:`aucune donnée depuis ${age} min`, sms:'',
+        diag:`Pas de données depuis ${hhmm(w.lastUpdate)}. Rattachée à la panne probable du répéteur ${w.rep}.`, action:`Traiter la panne du répéteur ${w.rep}.`};
+      return {title:'Perte de communication RTU', value:`aucune donnée depuis ${age} min`, sms:'Puits non surveillé. Vérifier RTU.',
+        diag:`La RTU de ${w.id} ne transmet plus depuis ${hhmm(w.lastUpdate)} (${age} min). ` + (others ? `Les autres puits du répéteur ${w.rep} communiquent normalement : le problème est sur la RTU de ce puits, pas sur le répéteur. ` : '') +
+          (c.bat < 24 ? `La dernière tension batterie reçue était de ${fr(c.bat,1)} V : cause probable batterie vide. ` : 'Causes fréquentes : panneau solaire, radio ou carte E/S de la RTU. ') +
+          `Le puits n'est plus surveillé tant que la communication n'est pas rétablie.` + (age >= rtuUrg ? ` La perte dure depuis plus de ${rtuUrg} min : passage en urgence.` : ` Au-delà de ${rtuUrg} min, l'alarme passera en urgence.`),
+        action:'Vérifier la batterie, le panneau solaire et la radio de la RTU.'};
+    }
+  }
+  return {title:code, value:'', sms:'', diag:'', action:''};
+}
+const snap = w => ({p:w.cur.p, t:w.cur.t, ann:w.cur.ann, q:w.cur.q, qe:w.cur.qe, pinj:w.cur.pinj, bat:w.cur.bat});
+
+/* =================== Agent actions =================== */
+function newAlarm(T, code, sev, ctx){
+  const i = info(T, code, ctx), parent = findParent(T, code);
+  const a = Object.assign({id:++alarmSeq, T, label:T.label, kind:T.kind, code, severity:sev, t0:simMin, ack:null, level:0, lastSms:null, notified:[], tEnd:null,
+    snapshot: T.kind === 'well' ? snap(T) : null, parent, children:[], exhausted:false, nWells: ctx && ctx.ws ? ctx.ws.length : 0}, i);
+  T.alarms[code] = a; allAlarms.push(a);
+  if(parent){
+    parent.children.push(a);
+    log('group', T.label, `${i.title} : ${i.value}. Rattachée à « ${parent.title} » (${parent.label}), pas de nouveau SMS.`);
+    return;
+  }
+  log('detect', T.label, `${i.title} : ${i.value}.`);
+  log('analyse', T.label, i.diag);
+  if(code === 'FEU'){ for(let i=0;i<S.roster.length;i++) sendSms(a, i, 'alarm'); a.level = S.roster.length - 1; log('escal', T.label, "Alarme de sécurité : toute la liste d'astreinte prévenue en même temps, sans attendre l'escalade."); }
+  else if(sev === 'urgence' || S.smsWarn) sendSms(a, 0, 'alarm');
+  sendAlarmMail(a, false);
+}
+function upgradeAlarm(T, a, sev, ctx){
+  const i = info(T, a.code, ctx);
+  Object.assign(a, {severity:sev, title:i.title, value:i.value, diag:i.diag, action:i.action, sms:i.sms});
+  if(T.kind === 'well') a.snapshot = snap(T);
+  if(a.parent) return;
+  log('escal', T.label, `Aggravation : ${i.title} passe en urgence (${i.value}).`);
+  log('analyse', T.label, i.diag);
+  if(!a.ack) sendSms(a, a.level, 'alarm');
+  sendAlarmMail(a, true);
+}
+function clearAlarm(T, a){
+  delete T.alarms[a.code]; delete T.okCount[a.code]; a.tEnd = simMin;
+  if(a.parent){ log('clear', T.label, `${a.title} : retour à la normale.`); return; }
+  log('clear', T.label, `${a.title} : retour à la normale après ${simMin - a.t0} min.`);
+  for(const idx of [...new Set(a.notified)]) sendSms(a, idx, 'clear');
+  sendMail({subject:`Fin d'alarme ${a.label} : ${a.title}`, to:S.alarmTo, label:a.label, level:'', kind:'alarm', body:
+`${a.kind === 'well' ? 'Puits' : 'Équipement'} : ${a.label}
+Alarme : ${a.title}
+Début : ${hhmm(a.t0)}, fin : ${hhmm(simMin)} (durée ${simMin - a.t0} min)
+${a.ack ? `Acquittée par ${S.roster[a.ack.idx].name} à ${hhmm(a.ack.t)}.` : (a.severity === 'urgence' ? 'Alarme jamais acquittée.' : "Avertissement, pas d'acquittement demandé.")}${a.children.length ? `\nAlarmes secondaires regroupées : ${a.children.length}.` : ''}
+
+Les valeurs sont revenues dans la plage normale.
+
+Message généré automatiquement par l'agent de surveillance (démonstration, données fictives).`});
+  updateAckUI(a);
+}
+function sendSms(a, idx, kind){
+  const p = S.roster[idx];
+  let text;
+  if(kind === 'alarm') text = `${a.severity === 'urgence' ? 'URGENCE' : 'AVERTISSEMENT'} ${a.label} ${hhmm(simMin)}\n${a.title} : ${a.value}.\n${a.sms}` + (a.severity === 'urgence' ? '\nRépondre OK pour acquitter.' : '');
+  else if(kind === 'escal') text = `ESCALADE ${a.label}\nNon acquittée depuis ${simMin - a.t0} min.\n${a.title} : ${a.value}.\nRépondre OK pour acquitter.`;
+  else text = `FIN ALARME ${a.label} ${hhmm(simMin)}\n${a.title} : retour à la normale.`;
+  if(kind !== 'clear'){ a.notified.push(idx); a.lastSms = simMin; }
+  smsCount++;
+  renderSms(a, idx, kind, text);
+  if(S.smsReal && (a.severity === 'urgence' || kind === 'clear')) realSms(p.tel, text, a.label);
+  log('sms', a.label, `SMS envoyé à ${p.name}, ${p.role.toLowerCase()} (${p.tel}).`);
+}
+const cleanNum = t => String(t).replace(/[^\d+]/g, '');
+async function realSms(tel, text, label){
+  const num = cleanNum(tel);
+  if(!/^\+?\d{8,15}$/.test(num)){ log('info', label, `SMS réel non envoyé : le numéro « ${tel} » n'est pas utilisable. Mettez un vrai numéro dans les paramètres.`); return; }
+  try{
+    const r = await fetch(S.smsUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({to:num, text})});
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    log('info', label, `SMS réel envoyé au ${num} par la passerelle du téléphone.`);
+  }catch(e){
+    log('info', label, `SMS réel non envoyé (${e && e.message ? e.message : 'passerelle injoignable'}). La démonstration continue normalement.`);
+  }
+}
+function ack(a, idx){
+  if(a.ack || a.tEnd !== null) return;
+  a.ack = {idx, t:simMin};
+  log('ack', a.label, `${S.roster[idx].name} a répondu OK : alarme acquittée après ${simMin - a.t0} min, escalade arrêtée.`);
+  updateAckUI(a); renderKpis();
+}
+function checkEscalations(){
+  for(const a of allAlarms){
+    if(a.parent || a.tEnd !== null || a.ack || a.severity !== 'urgence' || a.lastSms === null) continue;
+    if(simMin - a.lastSms < S.escMin) continue;
+    if(a.level < S.roster.length - 1){
+      a.level++;
+      if(a.T.kind === 'well' || a.code === 'REP') a.value = info(a.T, a.code).value;
+      log('escal', a.label, `Pas de réponse en ${S.escMin} min : escalade vers ${S.roster[a.level].name}, ${S.roster[a.level].role.toLowerCase()}.`);
+      sendSms(a, a.level, 'escal');
+    } else if(!a.exhausted){
+      a.exhausted = true;
+      log('escal', a.label, "Toujours pas de réponse : toute la liste d'astreinte a été prévenue. Appel de la salle de contrôle recommandé.");
+    }
+  }
+}
+function sendAlarmMail(a, upgraded){
+  const smsTo = a.notified.length ? [...new Set(a.notified)].map(i => `${S.roster[i].name} (${S.roster[i].role.toLowerCase()})`).join(', ') : 'aucun (avertissement, e-mail seulement)';
+  let values = '';
+  if(a.kind === 'well'){
+    const w = a.T, s = a.snapshot, M = manOf(w);
+    values = `${a.code === 'RTU' ? 'Dernières valeurs reçues' : "Valeurs au moment de l'alarme"}
+Pression tête : ${fr(s.p)} Barg (normale ${fr(w.base.p)})
+Pression manifold ${M.id} : ${fr(M.cur.pMan)} Barg
+Pression annulaire 9 5/8 : ${fr(s.ann)} Barg (normale ${fr(w.base.ann)})
+Température tête : ${fr(s.t)} °C` + (w.type === 'gl' ? `\nDébit gas lift : ${fr(s.q,0)} Sm³/j (consigne ${fr(w.base.q,0)})\nPression injection GL : ${fr(s.pinj)} Barg` : '') + (w.type === 'eau' ? `\nDébit eau de dessalage : ${fr(s.qe)} m³/j (normale ${fr(w.base.qe)})` : '') + `\nBatterie RTU : ${fr(s.bat,2)} V`;
+  } else {
+    const ws = a.kind === 'rep' ? wells.filter(w => w.rep === a.T.id) : wells.filter(w => w.man === a.T.id);
+    values = 'Puits concernés\n' + ws.map(w => `- ${w.id} (${TYPE_LAB[w.type]}) : pression tête ${fr(w.cur.p)} Barg, dernière donnée à ${hhmm(w.lastUpdate)}`).join('\n');
+  }
+  sendMail({subject:`[${a.severity === 'urgence' ? 'URGENCE' : 'AVERTISSEMENT'}] ${a.label} : ${a.title}${upgraded ? ' (aggravation)' : ''}`, to:S.alarmTo, label:a.label, level:a.severity, kind:'alarm', body:
+`${a.kind === 'well' ? `Puits : ${a.label} (${TYPE_LAB[a.T.type]}, manifold ${a.T.man}, répéteur ${a.T.rep})` : `Équipement : ${a.label}`}
+Détection : ${ddmmyyyy(a.t0)} à ${hhmm(a.t0)}
+Niveau : ${a.severity === 'urgence' ? 'Urgence' : 'Avertissement'}
+Alarme : ${a.title}, ${a.value}
+
+Analyse
+${a.diag}
+
+Action recommandée
+${a.action}
+
+${values}
+
+SMS envoyés à : ${smsTo}
+
+Message généré automatiquement par l'agent de surveillance (démonstration, données fictives).`});
+}
+
+/* =================== Long-term decline =================== */
+function genHistory(w, idx){
+  const r = rng(1000 + idx*97), P = DECL[w.id];
+  const g = () => (r()+r()+r()-1.5)*2;
+  const raw = [], events = [];
+  let lvl = 0, salt = 0, drift = 0;
+  for(let d=0; d<365; d++){
+    lvl += ((P.accelFrom != null && d >= P.accelFrom) ? P.accelRate : P.rate)/30.4;
+    if(P.stepDay === d) lvl += P.step;
+    if(P.duseDay === d){ lvl += P.duseStep; events.push({d, type:'duse', lab:'Duse'}); }
+    if(P.lavage){ if(P.lavage.includes(d)){ salt = 0; events.push({d, type:'lavage', lab:'Lavage'}); } else salt = Math.max(salt - 0.12, -3); }
+    if(P.driftFrom != null && d >= P.driftFrom) drift -= P.driftRate;
+    raw.push({real: lvl + salt, meas: lvl + salt + drift});
+  }
+  const exclude = new Set();
+  const nC = 2 + Math.floor(r()*2);
+  for(let c=0; c<nC; c++){
+    const s = 20 + Math.floor(r()*320), len = 1 + Math.floor(r()*3);
+    events.push({d:s, type:'fermeture', lab:'Fermeture', len});
+    for(let d=s; d<=s+len+1 && d<365; d++) exclude.add(d);
+  }
+  for(const e of events) if(e.type !== 'fermeture') exclude.add(e.d);
+  const endMeas = mean(raw.slice(-5).map(x => x.meas)), endReal = mean(raw.slice(-5).map(x => x.real));
+  const series = raw.map((x, d) => {
+    let p = w.base.p + (x.meas - endMeas) + g()*0.3;
+    const t = w.base.t + 0.25*(x.real - endReal) + g()*0.2;
+    const clos = events.find(e => e.type === 'fermeture' && d >= e.d && d <= e.d + e.len + 1);
+    if(clos) p += (d <= clos.d + clos.len) ? 8 + g()*0.5 : 2.5;
+    return {d, p, t, ex: exclude.has(d)};
+  });
+  events.sort((a,b) => a.d - b.d);
+  return {series, events};
+}
+function analyzeDecline(w){
+  const H = w.decl, valid = H.series.filter(x => !x.ex);
+  const fitWin = win => {
+    const from = 365 - win;
+    const steps = H.events.filter(e => (e.type === 'duse' || (e.type === 'lavage' && win <= 60)) && e.d >= from).map(e => e.d);
+    const start = steps.length ? Math.max(from, Math.max(...steps) + 1) : from;
+    const pts = valid.filter(x => x.d >= start);
+    if(pts.length < 5) return null;
+    const f = linreg(pts.map(x => x.d), pts.map(x => x.p)), ft = linreg(pts.map(x => x.d), pts.map(x => x.t));
+    return {slope:f.slope*30.4, perDay:f.slope, icpt:f.icpt, tslope:ft.slope*30.4, start, n:pts.length};
+  };
+  const fits = {30:fitWin(30), 60:fitWin(60), 365:fitWin(365)};
+  const pNow = mean(valid.slice(-5).map(x => x.p));
+  const d7 = mean(valid.filter(x => x.d >= 358).map(x => x.p)) - mean(valid.filter(x => x.d >= 351 && x.d <= 357).map(x => x.p));
+  const d365 = pNow - mean(valid.slice(0,14).map(x => x.p));
+  const s30 = fits[30] ? fits[30].slope : 0, s60 = fits[60] ? fits[60].slope : 0, s365 = fits[365] ? fits[365].slope : 0, ts60 = fits[60] ? fits[60].tslope : 0;
+  const lav = H.events.filter(e => e.type === 'lavage');
+  let step = null;
+  for(let d=14; d<=350; d++){
+    if(H.events.some(e => Math.abs(e.d - d) <= 4)) continue;
+    const before = valid.filter(x => x.d >= d-7 && x.d < d).map(x => x.p), after = valid.filter(x => x.d > d && x.d <= d+7).map(x => x.p);
+    if(before.length < 4 || after.length < 4) continue;
+    const size = mean(before) - mean(after);
+    if(size > 2.5 && (!step || size > step.size)) step = {d, size};
+  }
+  let cls, level; const notes = [];
+  if(s60 < -0.8 && Math.abs(ts60) < 0.12){
+    cls = 'Dérive capteur probable'; level = 4;
+    notes.push(`La pression baisse de ${fr(-s60)} bar par mois depuis 60 jours, mais la température tête reste stable (${sg(ts60,2)} °C par mois). Une vraie baisse d'écoulement ferait aussi baisser la température : il faut vérifier l'étalonnage du capteur avant de conclure à un déclin.`);
+  } else if(lav.length >= 2){
+    cls = 'Dépôts de sel récurrents'; level = s60 < -1.5 ? 3 : 2;
+    const gaps = []; for(let i=1;i<lav.length;i++) gaps.push(lav[i].d - lav[i-1].d);
+    notes.push(`La pression remonte après chaque lavage (${lav.map(e => ddmm(e.d)).join(', ')}) puis rebaisse d'environ ${fr(3)} bar en 25 jours. La cause est le dépôt de sel, pas le réservoir. Rythme actuel : un lavage tous les ${Math.round(mean(gaps))} jours environ.`);
+  } else if(s60 < -1.5){ cls = 'Déclin rapide'; level = 3; }
+  else if(s60 < -0.6){ cls = 'Déclin marqué'; level = 2; }
+  else if(s60 < -0.15){ cls = 'Déclin lent'; level = 1; }
+  else { cls = 'Stable'; level = 0; }
+  if(level < 4 && lav.length < 2 && s60 < -0.6 && s365 < 0 && s60 < 1.8*s365) notes.push(`Le déclin s'accélère : ${fr(-s60)} bar par mois sur les 60 derniers jours, contre ${fr(-s365)} bar par mois sur l'année.`);
+  if(step){ notes.push(`Chute brutale de ${fr(step.size)} bar autour du ${ddmmyy(step.d)} sans opération enregistrée ce jour-là. Chercher ce qui a changé : dépôt, venue d'eau, problème de tubing.`); if(level < 2){ level = 2; cls = 'Chute brutale'; } }
+  const duse = H.events.find(e => e.type === 'duse');
+  if(duse) notes.push(`Changement de duse le ${ddmmyy(duse.d)} : la marche de pression qu'il a provoquée n'est pas comptée comme un déclin.`);
+  const nClos = H.events.filter(e => e.type === 'fermeture').length;
+  notes.push(`${nClos} fermetures et leurs jours de remise en production ont été retirés du calcul.`);
+  const M = manOf(w), pMin = M.base.pMan + 3;
+  let months = null, forecast;
+  if(level === 4) forecast = 'À confirmer après contrôle du capteur';
+  else if(lav.length >= 2) forecast = 'Dépend de la fréquence des lavages';
+  else if(pNow <= pMin) forecast = 'Déjà atteinte';
+  else if(s60 >= -0.05) forecast = 'Pas de déclin mesurable';
+  else {
+    months = (pNow - pMin)/(-s60);
+    if(months > 36) forecast = 'Dans plus de 3 ans';
+    else { const dt = new Date(HIST_END + months*30.4*DAY); forecast = `${dt.toLocaleDateString('fr-FR',{month:'long', year:'numeric'})} (dans ${Math.max(1, Math.round(months))} mois)`; }
+  }
+  let action;
+  if(level === 4) action = 'Vérifier et réétalonner le capteur de pression tête.';
+  else if(lav.length >= 2) action = "Rapprocher les lavages ou augmenter le débit d'eau de dessalage.";
+  else if(step) action = 'Programmer un essai de puits pour trouver la cause de la chute brutale.';
+  else if(level >= 2) action = w.type === 'gl' ? "Programmer un essai de puits et revoir l'optimisation de la consigne gas lift." : 'Programmer un essai de puits et un contrôle du water cut ; étudier le passage en gas lift.';
+  else if(level === 1) action = 'Surveillance normale, revoir dans un mois.';
+  else action = 'Aucune action.';
+  return {pNow, pMin, d7, s30, s60, s365, d365, ts60, cls, level, notes, action, forecast, months, fits, salt: lav.length >= 2, step};
+}
+const declRes = {};
+wells.forEach((w, i) => { w.decl = genHistory(w, i); declRes[w.id] = analyzeDecline(w); });
+for(const M of manifolds){
+  const ws = wells.filter(w => w.man === M.id), med = median(ws.filter(w => declRes[w.id].level < 4 && !declRes[w.id].salt).map(w => declRes[w.id].s60));
+  for(const w of ws){
+    const R = declRes[w.id];
+    if(R.level < 2 || R.level === 4 || R.salt) continue;
+    if(R.s60 < 2*med - 0.3) R.notes.splice(0, 0, `Déclin propre au puits : les autres puits du manifold ${M.id} baissent d'environ ${fr(-med)} bar par mois seulement. Cause probable dans le puits (dépôts, venue d'eau, tubing) plutôt que dans le réservoir.`);
+    else R.notes.splice(0, 0, `Déclin de zone : les puits du manifold ${M.id} baissent tous au même rythme (médiane ${fr(-med)} bar par mois). Cause probable : baisse de pression du réservoir.`);
+  }
+}
+const declOrder = wells.map(w => w.id).sort((a,b) => (declRes[b].level - declRes[a].level) || (declRes[a].s60 - declRes[b].s60));
+
+/* =================== Performance of the alarm system =================== */
+const deferM3 = () => wells.reduce((s,w) => s + w.stats.defer, 0);
+const deferUsd = () => deferM3()*BBL*S.oilPrice;
+function alarmPerf(){
+  const span = Math.max(simMin, 1), nb = Math.max(1, Math.ceil(span/10));
+  const roots = allAlarms.filter(a => !a.parent);
+  const bRaw = new Array(nb).fill(0), bVis = new Array(nb).fill(0);
+  for(const a of allAlarms){ const k = Math.min(nb-1, Math.floor(a.t0/10)); bRaw[k]++; if(!a.parent) bVis[k]++; }
+  const floodRaw = bRaw.filter(v => v > 10).length, floodVis = bVis.filter(v => v > 10).length;
+  const standing = roots.filter(a => (a.tEnd === null ? simMin : a.tEnd) - a.t0 > 60);
+  const counts = {};
+  for(const a of allAlarms){ const k = a.label + ' – ' + a.title; counts[k] = (counts[k] || 0) + 1; }
+  const bad = Object.entries(counts).sort((x,y) => y[1] - x[1]).slice(0,5);
+  const chat = [];
+  for(const [k,v] of Object.entries(counts)){
+    const list = allAlarms.filter(a => a.label + ' – ' + a.title === k).map(a => a.t0).sort((x,y) => x-y);
+    for(let i=2;i<list.length;i++) if(list[i] - list[i-2] <= 30){ chat.push(k); break; }
+  }
+  const urg = roots.filter(a => a.severity === 'urgence').length;
+  const acked = roots.filter(a => a.ack);
+  return {span, nb, bRaw, bVis, roots:roots.length, raw:allAlarms.length, grouped:allAlarms.length - roots.length,
+    rateVis: roots.length/(span/10), rateRaw: allAlarms.length/(span/10),
+    peakVis: Math.max(0, ...bVis), peakRaw: Math.max(0, ...bRaw),
+    floodVis: floodVis/nb*100, floodRaw: floodRaw/nb*100,
+    standing, bad, chat, urgPct: roots.length ? urg/roots.length*100 : 0,
+    ackAvg: acked.length ? mean(acked.map(a => a.ack.t - a.t0)) : null,
+    reduction: allAlarms.length ? (allAlarms.length - roots.length)/allAlarms.length*100 : 0};
+}
+
+/* =================== Reports =================== */
+function sendDailyReport(auto){
+  const roots = allAlarms.filter(a => !a.parent), urg = roots.filter(a => a.severity === 'urgence').length, acked = roots.filter(a => a.ack);
+  const online = wells.reduce((s,w) => s + w.stats.online, 0), total = wells.reduce((s,w) => s + w.stats.total, 0);
+  const activeWells = wells.filter(w => Object.keys(w.alarms).length);
+  const L = [];
+  L.push(`Période : du ${ddmmyyyy(0)} ${hhmm(0)} au ${ddmmyyyy(simMin)} ${hhmm(simMin)} (${Math.floor(simMin/60)} h ${pad(simMin%60)} min simulées)`, '');
+  L.push('Synthèse');
+  L.push(`${wells.length} puits surveillés sur ${manifolds.length} manifolds : ${wells.length - activeWells.length} normaux, ${activeWells.length} en alarme en ce moment.`);
+  L.push(`${roots.length} alarme(s) sur la période, dont ${urg} urgence(s). ${allAlarms.length - roots.length} alarme(s) secondaire(s) regroupée(s) pour éviter les SMS inutiles.`);
+  L.push(`${smsCount} SMS et ${mails.length} e-mails envoyés.`);
+  if(acked.length) L.push(`Délai moyen d'acquittement : ${Math.round(mean(acked.map(a => a.ack.t - a.t0)))} min.`);
+  L.push(`Disponibilité radio moyenne : ${fr(total ? online/total*100 : 100)} %.`, '');
+  const P = alarmPerf(), dm = deferM3();
+  L.push('Production');
+  L.push(`Production estimée sur la période : ${fr(wells.reduce((x,w) => x + w.stats.prod, 0),1)} m³.`);
+  L.push(`Production différée (perte estimée) : ${fr(dm,1)} m³, soit environ ${fr(deferUsd(),0)} USD à ${fr(S.oilPrice,0)} USD le baril.`);
+  const defTop = wells.filter(w => w.stats.defer > 0.05).sort((a,b) => b.stats.defer - a.stats.defer).slice(0,5);
+  for(const w of defTop) L.push(`- ${w.id} : ${fr(w.stats.defer,1)} m³ différés (potentiel ${fr(w.base.qo,0)} m³/j)`);
+  if(!defTop.length) L.push('Aucune perte de production détectée.');
+  L.push('', "Performance du système d'alarmes (références EEMUA 191 et ISA 18.2)");
+  L.push(`Alarmes brutes : ${P.raw}. Alarmes présentées à l'opérateur : ${P.roots} (${fr(P.reduction,0)} % regroupées par l'agent).`);
+  L.push(`Taux moyen : ${fr(P.rateVis,2)} alarme(s) par 10 min (cible EEMUA 191 en régime normal : 1).`);
+  L.push(`Pic : ${P.peakVis} alarmes en 10 min contre ${P.peakRaw} sans regroupement (seuil d'inondation : 10).`);
+  L.push(`Temps passé en inondation d'alarmes : ${fr(P.floodVis,0)} % contre ${fr(P.floodRaw,0)} % sans regroupement.`);
+  L.push(`Part d'urgences : ${fr(P.urgPct,0)} %. Alarmes persistantes (plus de 60 min) : ${P.standing.length}. Alarmes bavardes : ${P.chat.length}.`);
+  L.push('');
+  L.push('Alarmes de la période');
+  if(!roots.length) L.push('Aucune alarme.');
+  for(const a of roots){
+    const parts = [`${hhmm(a.t0)} ${a.label}, ${a.severity === 'urgence' ? 'urgence' : 'avertissement'} : ${a.title}`];
+    parts.push(a.ack ? `acquittée à ${hhmm(a.ack.t)} par ${S.roster[a.ack.idx].name}` : (a.severity === 'urgence' ? 'non acquittée' : 'e-mail seulement'));
+    if(a.children.length) parts.push(`${a.children.length} alarme(s) regroupée(s)`);
+    parts.push(a.tEnd !== null ? `terminée à ${hhmm(a.tEnd)}` : 'toujours active');
+    L.push('- ' + parts.join(', '));
+  }
+  L.push('', 'Équipements à réparer');
+  const rep = [];
+  const codes = new Map();
+  for(const a of allAlarms){ if(['CAPTEUR','BATT','REP'].includes(a.code)) codes.set(a.label + a.code, a); }
+  for(const a of codes.values()) rep.push(`- ${a.label} : ${a.code === 'CAPTEUR' ? 'transmetteur de pression tête hors service' : a.code === 'BATT' ? 'batterie de RTU faible' : 'répéteur radio tombé en panne'}`);
+  for(const w of wells){ const av = w.stats.total ? w.stats.online/w.stats.total*100 : 100; if(av < 98 && !codes.has(repOf(w).label + 'REP')) rep.push(`- ${w.id} : disponibilité radio ${fr(av)} %`); }
+  for(const id of declOrder){ if(declRes[id].level === 4) rep.push(`- ${id} : capteur de pression à réétalonner (dérive détectée sur 60 jours)`); }
+  L.push(rep.length ? rep.join('\n') : 'Rien à signaler.');
+  L.push('', 'Tendances long terme (60 derniers jours)');
+  for(const id of declOrder.slice(0,4)){ const R = declRes[id]; L.push(`- ${id} : ${R.cls.toLowerCase()}, ${sg(R.s60)} bar/mois. Pression minimale : ${R.forecast.toLowerCase()}.`); }
+  L.push('', 'Actions recommandées aujourd\'hui');
+  const acts = [];
+  for(const T of [...repeaters, ...manifolds, ...wells]) for(const a of Object.values(T.alarms)) if(!a.parent) acts.push(`- ${a.label} : ${a.action}`);
+  for(const id of declOrder.slice(0,3)) if(declRes[id].level >= 2) acts.push(`- ${id} : ${declRes[id].action}`);
+  L.push(acts.length ? acts.join('\n') : 'Aucune action urgente. Continuer la surveillance normale.');
+  L.push('', 'État par puits');
+  for(const w of wells){
+    const act = Object.values(w.alarms), st = w.stats, av = st.total ? st.online/st.total*100 : 100;
+    L.push(`- ${w.id} (${TYPE_LAB[w.type].toLowerCase()}, ${w.man}) : ${act.length ? 'en alarme (' + act.map(a => a.title.toLowerCase()).join(', ') + ')' : 'normal'}` + (st.n ? `, pression tête moyenne ${fr(st.psum/st.n)} Barg (min ${fr(st.pmin)}, max ${fr(st.pmax)})` : '') + `, radio ${fr(av,0)} %`);
+  }
+  L.push('', "Rapport généré automatiquement par l'agent de surveillance (démonstration, données fictives).");
+  const node = sendMail({subject:`Rapport journalier de surveillance des puits du ${ddmmyyyy(simMin)}`, to:S.reportTo, label:null, level:'', kind:'report', body:L.join('\n')});
+  log('info', null, auto ? `Rapport journalier envoyé automatiquement à ${hhmm(simMin)} vers ${S.reportTo}.` : `Rapport journalier envoyé à la demande vers ${S.reportTo}.`);
+  return node;
+}
+function sendDeclineReport(){
+  const L = [`Analyse du ${ddmmyy(0)} au ${ddmmyy(364)} sur ${wells.length} puits. Vitesses en bar par mois, calculées sur les jours de production normale (fermetures, lavages et changements de duse retirés).`, ''];
+  L.push('Classement par priorité');
+  for(const id of declOrder){
+    const R = declRes[id], w = wellById[id];
+    L.push(`${id} (${TYPE_LAB[w.type].toLowerCase()}, ${w.man}) : ${R.cls}`);
+    L.push(`   Pression actuelle ${fr(R.pNow)} Barg ; 7 j ${sg(R.d7)} bar ; 30 j ${sg(R.s30)} ; 60 j ${sg(R.s60)} ; 1 an ${sg(R.d365)} bar`);
+    L.push(`   Pression minimale pour débiter (${fr(R.pMin)} Barg) : ${R.forecast}`);
+    for(const n of R.notes) L.push(`   ${n}`);
+    L.push(`   Action : ${R.action}`, '');
+  }
+  L.push("Rapport généré automatiquement par l'agent de surveillance (démonstration, données fictives).");
+  sendMail({subject:`Rapport de déclin de pression, 12 puits, au ${ddmmyy(364)}`, to:S.reportTo, label:null, level:'', kind:'decline', body:L.join('\n')});
+  log('info', null, `Rapport de déclin envoyé vers ${S.reportTo}.`);
+}
+function sendHandoverReport(){
+  const from = Math.max(0, simMin - 480), P = alarmPerf();
+  const inShift = allAlarms.filter(a => !a.parent && a.t0 >= from);
+  const open = allAlarms.filter(a => !a.parent && a.tEnd === null);
+  const L = [`Relève de quart, ${ddmmyyyy(simMin)} à ${hhmm(simMin)} (période couverte : ${hhmm(from)} à ${hhmm(simMin)}).`, ''];
+  L.push('À reprendre par le quart suivant');
+  if(open.length) for(const a of open) L.push(`- ${a.label} : ${a.title}, ${a.severity === 'urgence' ? 'urgence' : 'avertissement'} depuis ${hhmm(a.t0)}${a.ack ? `, acquittée par ${S.roster[a.ack.idx].name}` : ', non acquittée'}. ${a.action}`);
+  else L.push('- Aucune alarme ouverte.');
+  L.push('', 'Traité pendant le quart');
+  const done = inShift.filter(a => a.tEnd !== null);
+  L.push(done.length ? done.map(a => `- ${hhmm(a.t0)} ${a.label} : ${a.title}, terminée à ${hhmm(a.tEnd)} (${a.tEnd - a.t0} min)`).join('\n') : '- Rien à signaler.');
+  L.push('', 'Puits à surveiller de près');
+  const watch = declOrder.filter(id => declRes[id].level >= 2).slice(0,4);
+  for(const id of watch) L.push(`- ${id} : ${declRes[id].cls.toLowerCase()}, ${sg(declRes[id].s60)} bar/mois. ${declRes[id].action}`);
+  L.push('', 'Chiffres du quart');
+  L.push(`Production différée : ${fr(deferM3(),1)} m³. SMS envoyés : ${smsCount}. Alarmes présentées : ${P.roots} pour ${P.raw} détections brutes.`);
+  L.push('', "Document généré automatiquement par l'agent de surveillance (démonstration, données fictives).");
+  sendMail({subject:`Relève de quart du ${ddmmyyyy(simMin)} à ${hhmm(simMin)}`, to:S.reportTo, label:null, level:'', kind:'report', body:L.join('\n')});
+  log('info', null, `Fiche de relève de quart envoyée vers ${S.reportTo}.`);
+}
+function autoReport(){
+  const d = dateAt(simMin);
+  if(d.getHours() === S.reportHour && d.getMinutes() === 0) sendDailyReport(true);
+}
+
+/* =================== Mail =================== */
+function sendMail(o){
+  const m = {id:++mailSeq, t:simMin, subject:o.subject, to:o.to, body:o.body, level:o.level || '', kind:o.kind || 'alarm', ai:''};
+  mails.push(m);
+  const list = $('mailList'), empty = list.querySelector('.empty'); if(empty) empty.remove();
+  const node = mailNode(m);
+  list.prepend(node);
+  applyMailFilter();
+  $('mailBadge').textContent = mails.length; $('mCount').textContent = mails.length;
+  if(o.kind === 'alarm') log('mail', o.label, `E-mail envoyé : ${o.subject}.`);
+  return node;
+}
+const fullBody = m => m.ai ? `Synthèse rédigée par l'IA\n${m.ai}\n\n${m.body}` : m.body;
+function gmailUrl(m){
+  let body = fullBody(m);
+  if(body.length > 1800) body = body.slice(0, 1800) + "\n\n[… texte coupé pour le lien Gmail : utilisez « Copier » pour le rapport complet]";
+  return 'https://mail.google.com/mail/?view=cm&fs=1&to=' + encodeURIComponent(emailList(m.to).join(',')) + '&su=' + encodeURIComponent(m.subject) + '&body=' + encodeURIComponent(body);
+}
+function mailNode(m){
+  const d = document.createElement('details');
+  d.className = 'mailitem'; d.dataset.level = m.level; d.dataset.kind = m.kind;
+  d.innerHTML = `<summary><span class="m-subj"></span><span class="m-meta"></span></summary>
+    <pre class="m-body"></pre>
+    <div class="m-actions">
+      <a class="btn" target="_blank" rel="noopener">Ouvrir dans Gmail</a>
+      <button type="button" class="btn" data-act="copy">Copier</button>
+      <span class="m-status" role="status"></span>
+    </div>
+`;
+  d.querySelector('.m-subj').textContent = m.subject;
+  d.querySelector('.m-meta').textContent = `À : ${m.to}, ${ddmmyyyy(m.t)} ${hhmm(m.t)}`;
+  const pre = d.querySelector('.m-body'), link = d.querySelector('a'), status = d.querySelector('.m-status');
+  const refresh = () => { pre.textContent = fullBody(m); link.href = gmailUrl(m); };
+  refresh();
+  d.querySelector('[data-act="copy"]').addEventListener('click', () => copyText(`Objet : ${m.subject}\nÀ : ${m.to}\n\n${fullBody(m)}`, status));
+  return d;
+}
+async function copyText(text, status){
+  let ok = false;
+  try{ await navigator.clipboard.writeText(text); ok = true; }catch(e){
+    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly',''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try{ ok = document.execCommand('copy'); }catch(_){}
+    ta.remove();
+  }
+  status.textContent = ok ? 'Copié.' : 'Copie bloquée : ouvrez le message et sélectionnez le texte à la main.';
+}
+let mailFilter = 'all';
+function applyMailFilter(){
+  document.querySelectorAll('#mailList .mailitem').forEach(n => {
+    const k = n.dataset.kind;
+    n.hidden = !(mailFilter === 'all' || (mailFilter === 'alarm' && k === 'alarm') || (mailFilter === 'report' && (k === 'report' || k === 'decline')));
+  });
+}
+
+
+/* =================== Rendering =================== */
+function log(type, label, text){
+  jCount++;
+  const list = $('journal'), li = document.createElement('li');
+  li.dataset.type = type;
+  li.innerHTML = `<time>${hhmm(simMin)}</time><span class="jt">${JLAB[type]}</span><p>${label ? `<strong>${esc(label)}</strong> ` : ''}${esc(text)}</p>`;
+  list.prepend(li);
+  while(list.children.length > 150) list.lastElementChild.remove();
+  $('jCount').textContent = jCount;
+}
+function renderSms(a, idx, kind, text){
+  const list = $('smsList'), empty = list.querySelector('.empty'); if(empty) empty.remove();
+  const nl = text.indexOf('\n'), n = document.createElement('article');
+  n.className = 'notif'; n.dataset.kind = kind; n.dataset.alarm = a.id; n.dataset.idx = idx; n.dataset.sev = a.severity;
+  n.innerHTML = `<header><span>SMS à ${esc(S.roster[idx].name)}</span><time>${hhmm(simMin)}</time></header><p class="sms-text"><strong class="sms-head">${esc(text.slice(0,nl))}</strong>${esc(text.slice(nl))}</p><div class="ack-area"></div>`;
+  list.prepend(n);
+  while(list.children.length > 60) list.lastElementChild.remove();
+  updateAckUI(a);
+}
+function updateAckUI(a){
+  document.querySelectorAll(`.notif[data-alarm="${a.id}"]`).forEach(n => {
+    if(n.dataset.kind === 'clear') return;
+    const area = n.querySelector('.ack-area'), idx = +n.dataset.idx;
+    if(a.ack) area.innerHTML = (a.ack.idx === idx ? '<p class="reply">OK</p>' : '') + `<p class="ack-note">Acquittée par ${esc(S.roster[a.ack.idx].name)} à ${hhmm(a.ack.t)}</p>`;
+    else if(a.tEnd !== null) area.innerHTML = `<p class="ack-note">Alarme terminée à ${hhmm(a.tEnd)}</p>`;
+    else if(a.severity === 'urgence' && !area.querySelector('button')){
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ack-btn'; b.textContent = `Répondre OK (${S.roster[idx].name})`;
+      b.addEventListener('click', () => ack(a, idx));
+      area.replaceChildren(b);
+    }
+  });
+}
+function renderRoster(){
+  $('roster').innerHTML = `<p>Astreinte, escalade après ${S.escMin} min sans réponse</p><ol>${S.roster.map(p => `<li>${esc(p.name)}, ${esc(p.role.toLowerCase())}</li>`).join('')}</ol>`;
+}
+function buildWells(){
+  const list = $('wellList');
+  for(const M of manifolds){
+    const h = document.createElement('div');
+    h.className = 'manrow'; h.dataset.man = M.id;
+    h.innerHTML = `<span><strong>Manifold ${M.id}</strong>, répéteur ${M.rep} <span class="mstate"></span></span><span class="mvals"></span>`;
+    list.appendChild(h); M.el = h;
+    for(const w of wells.filter(x => x.man === M.id)){
+      const r = document.createElement('div');
+      r.className = 'well'; r.tabIndex = 0; r.setAttribute('role','button'); r.dataset.id = w.id;
+      r.innerHTML = `<div class="w-name"><strong>${w.id}</strong><span class="wtype">${TYPE_LAB[w.type]}</span><span class="state"></span><span class="sim"></span></div>
+        <div class="w-p"><span class="lab">Pression tête</span><span class="val"><b></b> Barg</span><svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none" aria-hidden="true"><polyline points=""/></svg></div>
+        <div class="w-a"><span class="lab">P. annulaire 9 5/8</span><span class="val"><b></b> Barg</span></div>
+        <div class="w-q"><span class="lab">Injection</span><span class="val"><b></b> <i></i></span></div>
+        <div class="w-t"><span class="lab">Temp. tête</span><span class="val"><b></b> °C</span></div>
+        <div class="w-r"><span class="lab">RTU radio</span><span class="val"><b></b> <i></i></span></div>`;
+      const pick = () => { selectWell(w.id); };
+      r.addEventListener('click', pick);
+      r.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pick(); } });
+      list.appendChild(r); w.el = r;
+    }
+  }
+}
+function wellState(w){
+  const al = Object.values(w.alarms);
+  return al.some(a => a.severity === 'urgence') ? 'urgence' : al.length ? 'avert' : 'normal';
+}
+function renderWells(){
+  let nU = 0, nA = 0;
+  for(const M of manifolds){
+    const R = repById[M.rep], gal = [...Object.values(M.alarms), ...Object.values(R.alarms)];
+    M.el.dataset.state = gal.length ? 'urgence' : 'normal';
+    M.el.querySelector('.mstate').textContent = gal.length ? ' : ' + gal.map(a => a.title.toLowerCase()).join(', ') : '';
+    M.el.querySelector('.mvals').textContent = `P manifold ${fr(M.cur.pMan)} Barg, réseau GL ${fr(M.cur.pGL)} Barg`;
+  }
+  for(const w of wells){
+    const sev = wellState(w), al = Object.values(w.alarms);
+    if(sev === 'urgence') nU++; else if(sev === 'avert') nA++;
+    const r = w.el;
+    r.dataset.state = sev;
+    r.setAttribute('aria-pressed', String(selected === w.id));
+    r.classList.toggle('stale', !!w.alarms.RTU);
+    r.querySelector('.state').textContent = sev === 'normal' ? 'Normal' : al.map(a => a.title + (a.parent ? ' (regroupée)' : '')).join(', ');
+    r.querySelector('.sim').textContent = w.incident ? `Incident simulé : ${INC_LAB[w.incident]}` : (manOf(w).incident ? `Incident simulé sur le manifold : ${INC_LAB[manOf(w).incident]}` : (repOf(w).down ? 'Incident simulé : panne du répéteur' : ''));
+    const set = (sel, v, cls, unit) => { const s = r.querySelector(sel + ' .val'); s.querySelector('b').textContent = v; if(unit !== undefined) s.querySelector('i').textContent = unit; s.className = 'val' + (cls ? ' ' + cls : ''); };
+    set('.w-p', fr(w.cur.p), w.alarms.CAPTEUR ? 'warnv' : (w.alarms.P_CHUTE || w.alarms.P_HAUTE) ? 'bad' : (w.alarms.INSTAB ? 'warnv' : ''));
+    set('.w-a', fr(w.cur.ann), w.alarms.ANN ? 'bad' : '');
+    if(w.type === 'gl') set('.w-q', fr(w.cur.q,0), w.alarms.GL_ARRET ? 'bad' : '', 'Sm³/j GL');
+    else if(w.type === 'eau') set('.w-q', fr(w.cur.qe), w.alarms.EAU_ARRET ? (w.alarms.EAU_ARRET.severity === 'urgence' ? 'bad' : 'warnv') : '', 'm³/j eau');
+    else set('.w-q', '–', '', 'éruptif');
+    set('.w-t', fr(w.cur.t), '');
+    const age = simMin - w.lastUpdate;
+    if(age >= 2) set('.w-r', `Hors ligne ${age} min`, w.alarms.RTU ? (w.alarms.RTU.severity === 'urgence' || w.alarms.RTU.parent ? 'bad' : 'warnv') : '', '');
+    else set('.w-r', 'En ligne', w.alarms.BATT ? 'warnv' : '', `${fr(w.cur.bat,1)} V`);
+    const h = w.hist.p.slice(-90);
+    const mn = Math.min(...h, w.base.p - 3), mx = Math.max(...h, w.base.p + 3);
+    r.querySelector('polyline').setAttribute('points', h.map((v,i) => `${(i/Math.max(h.length-1,1)*120).toFixed(1)},${(23 - (v-mn)/(mx-mn)*22).toFixed(1)}`).join(' '));
+  }
+  $('wellSummary').textContent = `${wells.length - nU - nA} normaux, ${nU} en urgence, ${nA} en avertissement`;
+}
+function renderClock(){
+  const d = dateAt(simMin), t = hhmm(simMin), night = d.getHours() >= 20 || d.getHours() < 6;
+  $('clockTime').textContent = t; $('phTime').textContent = t;
+  $('clockDate').textContent = ddmmyyyy(simMin);
+  $('phDate').textContent = d.toLocaleDateString('fr-FR', {weekday:'long', day:'numeric', month:'long'});
+  $('nightBadge').hidden = !night; $('phNight').hidden = !night;
+}
+function renderKpis(){
+  const nal = wells.filter(w => Object.keys(w.alarms).length).length;
+  $('kAlarm').textContent = `${nal} / ${wells.length}`; $('kAlarm').classList.toggle('bad', nal > 0);
+  const on = wells.reduce((s,w) => s + w.stats.online, 0), tot = wells.reduce((s,w) => s + w.stats.total, 0);
+  $('kRadio').textContent = `${fr(tot ? on/tot*100 : 100)} %`;
+  $('kSms').textContent = smsCount;
+  const dm = deferM3();
+  $('kDefer').textContent = `${fr(dm,1)} m³`;
+  $('kDefer').classList.toggle('bad', dm > 1);
+  const P = alarmPerf();
+  $('kLoad').textContent = `${P.roots} / ${P.raw}`;
+  const acked = allAlarms.filter(a => a.ack);
+  $('kAck').textContent = acked.length ? `${Math.round(mean(acked.map(a => a.ack.t - a.t0)))} min` : '–';
+  const now = dateAt(simMin); let next = new Date(now); next.setHours(S.reportHour, 0, 0, 0); if(next <= now) next = new Date(next.getTime() + DAY);
+  $('kReport').textContent = (next.getDate() !== now.getDate() ? 'demain ' : '') + pad(S.reportHour) + ':00';
+}
+
+/* ---- charts ---- */
+function niceTicks(min, max, n){ const span = max - min, raw = span/n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw/mag, step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10)*mag; const out = []; for(let v = Math.ceil(min/step)*step; v <= max + 1e-9; v += step) out.push(v); return {ticks:out, step}; }
+let selected = 'PUITS-01', detailKey = '';
+function selectWell(id){
+  selected = id; $('wellSel').value = id; updateWellIncButtons(); renderWells(); renderDetail(true);
+}
+function renderDetail(force){
+  const w = wellById[selected], M = manOf(w);
+  $('dTitle').textContent = `Détail du puits ${w.id}`;
+  $('dMeta').textContent = `${TYPE_LAB[w.type]}, manifold ${M.id}, répéteur ${w.rep}. Dernière donnée à ${hhmm(w.lastUpdate)}. Deux dernières heures.`;
+  const n = Math.min(120, w.hist.p.length), P = w.hist.p.slice(-n), MA = w.hist.man.slice(-n), AN = w.hist.ann.slice(-n);
+  const lo = (0.9 - S.thChute/100)*w.base.p, hi = (1 + S.thSurp/100)*w.base.p;
+  let yMin = Math.min(0, ...P, ...MA, ...AN), yMax = Math.max(hi, ...P, ...MA, ...AN) * 1.05;
+  const W = 760, H = 230, L = 40, Rr = 10, T = 10, B = 24;
+  const X = i => L + i/Math.max(n-1,1)*(W-L-Rr), Y = v => T + (yMax - v)/(yMax - yMin)*(H-T-B);
+  const {ticks} = niceTicks(yMin, yMax, 4);
+  let s = ticks.map(v => `<line class="grid" x1="${L}" x2="${W-Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L-6}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end">${fr(v,0)}</text>`).join('');
+  const t0 = w.lastUpdate - (n-1);
+  for(const i of [0, Math.floor((n-1)/2), n-1]) s += `<text x="${X(i).toFixed(1)}" y="${H-6}" text-anchor="${i === 0 ? 'start' : i === n-1 ? 'end' : 'middle'}">${hhmm(t0 + i)}</text>`;
+  s += `<line class="h-th" x1="${L}" x2="${W-Rr}" y1="${Y(lo).toFixed(1)}" y2="${Y(lo).toFixed(1)}"/><line class="h-th" x1="${L}" x2="${W-Rr}" y1="${Y(hi).toFixed(1)}" y2="${Y(hi).toFixed(1)}"/>`;
+  const line = (arr, cls) => `<polyline class="${cls}" points="${arr.map((v,i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ')}"/>`;
+  s += line(AN, 's-ann') + line(MA, 's-man') + line(P, 's-p');
+  $('dChart').innerHTML = s;
+  const chip = (lab, cls) => `<span class="chip ${cls}">${lab}</span>`;
+  const age0 = simMin - w.lastUpdate;
+  $('dStatus').innerHTML = [
+    chip(`Production estimée ${fr(w.cur.qo,0)} m³/j sur ${fr(w.base.qo,0)}`, w.cur.qo < 0.6*w.base.qo ? 'bad' : w.cur.qo < 0.9*w.base.qo ? 'warnv' : 'ok'),
+    chip(`Différé ${fr(w.stats.defer,1)} m³`, w.stats.defer > 0.5 ? 'warnv' : ''),
+    chip(w.sdv ? 'SDV ouverte' : 'SDV FERMÉE', w.sdv ? 'ok' : 'bad'),
+    chip(w.fire ? 'DÉTECTION FEU' : 'Feu : normal', w.fire ? 'bad' : 'ok'),
+    chip(w.intrus ? 'INTRUSION' : 'Anti-intrusion : normal', w.intrus ? 'bad' : 'ok'),
+    chip(w.io ? 'Cartes E/S : normal' : 'Cartes E/S en défaut', w.io ? 'ok' : 'warnv'),
+    chip(`Batterie ${fr(w.cur.bat,1)} V`, w.cur.bat < 24 ? 'warnv' : 'ok'),
+    chip(`Annulaire ${fr(w.cur.ann)} Barg sur MAASP ${fr(w.base.maasp,0)}`, w.cur.ann > 0.7*w.base.maasp ? 'bad' : w.cur.ann > ANN_DT ? 'warnv' : 'ok'),
+    chip(age0 >= 2 ? `Radio hors ligne ${age0} min` : 'Radio en ligne', age0 >= 2 ? 'bad' : 'ok')
+  ].join('');
+  const al = Object.values(w.alarms);
+  const key = selected + '|' + al.map(a => a.id + a.severity).join(',');
+  if(force || key !== detailKey){
+    detailKey = key;
+    $('dAlarms').innerHTML = al.length ? al.map(a => `<div class="d-alarm" data-sev="${a.severity}"><p><strong>${esc(a.title)}</strong>, ${a.severity === 'urgence' ? 'urgence' : 'avertissement'} depuis ${hhmm(a.t0)}${a.parent ? `, regroupée sous « ${esc(rootOf(a).title)} »` : ''}</p><p>${esc(a.diag)}</p><p class="d-act">Action : ${esc(a.action)}</p></div>`).join('')
+      : `<p class="muted">Aucune alarme sur ce puits. Tendance sur 60 jours : ${esc(declRes[w.id].cls.toLowerCase())} (${sg(declRes[w.id].s60)} bar par mois).</p>`;
+  }
+}
+
+/* ---- decline tab ---- */
+let declSel = declOrder[0], declWin = 60;
+function buildDeclTable(){
+  $('declRange').textContent = `du ${ddmmyy(0)} au ${ddmmyy(364)}`;
+  const cls = v => v < -1.5 ? 'bad' : v < -0.6 ? 'warnv' : '';
+  $('declBody').innerHTML = declOrder.map(id => {
+    const R = declRes[id], w = wellById[id];
+    return `<tr data-id="${id}" tabindex="0" aria-selected="false"><td><strong>${id}</strong><br><span class="muted">${TYPE_LAB[w.type]}</span></td><td>${w.man}</td><td class="num">${fr(R.pNow)} Barg</td><td class="num">${sg(R.d7)}</td><td class="num ${cls(R.s30)}">${sg(R.s30)}</td><td class="num ${cls(R.s60)}">${sg(R.s60)}</td><td class="num">${sg(R.d365)}</td><td class="cls ${R.level >= 3 || R.level === 4 ? 'bad' : R.level === 2 ? 'warnv' : ''}">${esc(R.cls)}</td><td>${esc(R.forecast)}</td></tr>`;
+  }).join('');
+  $('declBody').querySelectorAll('tr').forEach(tr => {
+    const pick = () => { declSel = tr.dataset.id; renderDecl(); };
+    tr.addEventListener('click', pick);
+    tr.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pick(); } });
+  });
+}
+function renderDecl(){
+  const w = wellById[declSel], R = declRes[declSel], M = manOf(w);
+  $('declBody').querySelectorAll('tr').forEach(tr => tr.setAttribute('aria-selected', String(tr.dataset.id === declSel)));
+  $('declTitle').textContent = `${w.id} : ${R.cls}`;
+  document.querySelectorAll('#winSeg .btn').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.win === declWin)));
+  const win = declWin, from = 365 - win, ext = win >= 60 ? Math.round(win*0.35) : 0, x0 = from, x1 = 364 + ext;
+  const pts = w.decl.series.filter(p => p.d >= from), valid = pts.filter(p => !p.ex);
+  const fit = win >= 30 ? R.fits[win] : null;
+  const showFc = ext > 0 && R.level < 4 && !R.salt && R.s60 < -0.05;
+  const fcEnd = showFc ? R.pNow + R.s60/30.4*ext : null;
+  const ys = valid.map(p => p.p); if(showFc) ys.push(fcEnd, R.pMin);
+  let yMin = Math.min(...ys), yMax = Math.max(...ys); const py = Math.max(0.8, (yMax - yMin)*0.12); yMin -= py; yMax += py;
+  const W = 760, H = 290, L = 44, Rr = 12, T = 22, B = 26;
+  const X = d => L + (d - x0)/(x1 - x0)*(W - L - Rr), Y = v => T + (yMax - v)/(yMax - yMin)*(H - T - B), cy = v => Math.min(Math.max(Y(v), T), H - B);
+  const {ticks} = niceTicks(yMin, yMax, 5);
+  let s = ticks.map(v => `<line class="grid" x1="${L}" x2="${W-Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L-6}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end">${fr(v,0)}</text>`).join('');
+  const nx = 5;
+  for(let k=0;k<=nx;k++){ const d = Math.round(x0 + (x1-x0)*k/nx); const dt = new Date(HIST_END - (364-d)*DAY); s += `<text x="${X(d).toFixed(1)}" y="${H-6}" text-anchor="${k === 0 ? 'start' : k === nx ? 'end' : 'middle'}">${pad(dt.getDate())}/${pad(dt.getMonth()+1)}${win === 365 || ext ? '/' + String(dt.getFullYear()).slice(2) : ''}</text>`; }
+  let lastLab = -1e9;
+  for(const e of w.decl.events.filter(e => e.d >= from)){
+    s += `<line class="ev" x1="${X(e.d).toFixed(1)}" x2="${X(e.d).toFixed(1)}" y1="${T}" y2="${H-B}"/>`;
+    if(X(e.d) - lastLab > 60){ s += `<text x="${(X(e.d)+3).toFixed(1)}" y="${T-6}">${e.lab}</text>`; lastLab = X(e.d); }
+  }
+  if(ext) s += `<line class="today" x1="${X(364).toFixed(1)}" x2="${X(364).toFixed(1)}" y1="${T}" y2="${H-B}"/>`;
+  let path = '', pen = false;
+  for(const p of pts){ if(p.ex){ pen = false; continue; } path += (pen ? 'L' : 'M') + X(p.d).toFixed(1) + ',' + Y(p.p).toFixed(1); pen = true; }
+  s += `<path class="s-p" d="${path}" fill="none"/>`;
+  for(const p of pts.filter(p => p.ex)){ const x = X(p.d), y = cy(p.p); s += `<path class="ex" d="M${(x-3).toFixed(1)},${(y-3).toFixed(1)}l6,6m0,-6l-6,6"/>`; }
+  if(fit && R.level < 4){ const a = Math.max(fit.start, from); s += `<line class="s-reg" x1="${X(a).toFixed(1)}" y1="${Y(fit.icpt + fit.perDay*a).toFixed(1)}" x2="${X(364).toFixed(1)}" y2="${Y(fit.icpt + fit.perDay*364).toFixed(1)}"/>`; }
+  if(showFc){
+    s += `<line class="h-th" x1="${L}" x2="${W-Rr}" y1="${Y(R.pMin).toFixed(1)}" y2="${Y(R.pMin).toFixed(1)}"/><text x="${L+4}" y="${(Y(R.pMin)-5).toFixed(1)}">${fr(R.pMin)} Barg</text>`;
+    s += `<line class="s-fc" x1="${X(364).toFixed(1)}" y1="${Y(R.pNow).toFixed(1)}" x2="${X(x1).toFixed(1)}" y2="${Y(fcEnd).toFixed(1)}"/>`;
+  }
+  $('declChart').innerHTML = s;
+  const lg = document.querySelector('#panel-decl .legend');
+  if(lg){ lg.querySelector('.l-reg').hidden = !(fit && R.level < 4); lg.querySelector('.l-fc').hidden = !showFc; lg.querySelector('.l-th').hidden = !showFc; }
+  $('declText').innerHTML = `<p>Pression actuelle ${fr(R.pNow)} Barg. Sur 60 jours : ${sg(R.s60)} bar par mois (température ${sg(R.ts60,2)} °C par mois). Sur un an : ${sg(R.d365)} bar au total. Pression minimale pour débiter dans le manifold ${M.id} : ${fr(R.pMin)} Barg, atteinte ${R.months ? 'vers ' : ''}${esc(R.forecast.toLowerCase())}.</p>` +
+    R.notes.map(n => `<p>${esc(n)}</p>`).join('') + `<p class="act">Action proposée : ${esc(R.action)}</p>`;
+}
+
+function renderPerf(){
+  const P = alarmPerf();
+  $('perfSpan').textContent = `sur ${Math.floor(P.span/60)} h ${pad(Math.round(P.span)%60)} min de surveillance`;
+  $('perfKpis').innerHTML = `
+    <div><b>${fr(P.reduction,0)} %</b><span>alarmes évitées à l'opérateur</span></div>
+    <div><b>${fr(P.rateVis,2)}</b><span>alarmes par 10 min (cible 1)</span></div>
+    <div><b class="${P.peakVis > 10 ? 'bad' : ''}">${P.peakVis}</b><span>pic sur 10 min (seuil 10)</span></div>
+    <div><b>${fr(P.floodVis,0)} %</b><span>temps en inondation</span></div>
+    <div><b>${P.ackAvg === null ? '–' : Math.round(P.ackAvg) + ' min'}</b><span>délai moyen d'acquittement</span></div>`;
+  const W = 760, H = 240, L = 40, Rr = 10, T = 12, B = 26, n = P.nb;
+  const yMax = Math.max(12, P.peakRaw + 2);
+  const X = i => L + (i + 0.5)/n*(W - L - Rr), Y = v => T + (yMax - v)/yMax*(H - T - B), bw = Math.min(26, (W - L - Rr)/n*0.38);
+  const {ticks} = niceTicks(0, yMax, 4);
+  let g = ticks.map(v => `<line class="grid" x1="${L}" x2="${W-Rr}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text x="${L-6}" y="${(Y(v)+4).toFixed(1)}" text-anchor="end">${fr(v,0)}</text>`).join('');
+  g += `<line class="h-th" x1="${L}" x2="${W-Rr}" y1="${Y(10).toFixed(1)}" y2="${Y(10).toFixed(1)}"/>`;
+  for(let i=0;i<n;i++){
+    const x = X(i);
+    if(P.bRaw[i]) g += `<rect class="b-raw" x="${(x-bw).toFixed(1)}" y="${Y(P.bRaw[i]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0)-Y(P.bRaw[i])).toFixed(1)}"/>`;
+    if(P.bVis[i]) g += `<rect class="b-vis" x="${x.toFixed(1)}" y="${Y(P.bVis[i]).toFixed(1)}" width="${bw.toFixed(1)}" height="${(Y(0)-Y(P.bVis[i])).toFixed(1)}"/>`;
+    if(n <= 14 || i % Math.ceil(n/12) === 0) g += `<text x="${x.toFixed(1)}" y="${H-6}" text-anchor="middle">${hhmm(i*10)}</text>`;
+  }
+  $('perfChart').innerHTML = g;
+  const row = (lab, sans, avec, cible, ok) => `<tr><td>${lab}</td><td class="num">${sans}</td><td class="num">${avec}</td><td>${cible}</td><td class="${ok ? 'pass' : 'fail'}">${ok ? 'Conforme' : 'À surveiller'}</td></tr>`;
+  $('perfBody').innerHTML =
+    row("Alarmes présentées sur la période", P.raw, P.roots, 'le moins possible', true) +
+    row('Taux moyen par 10 min', fr(P.rateRaw,2), fr(P.rateVis,2), '1 (EEMUA 191)', P.rateVis <= 1) +
+    row('Pic sur 10 min', P.peakRaw, P.peakVis, '10 (EEMUA 191)', P.peakVis <= 10) +
+    row("Temps en inondation d'alarmes", fr(P.floodRaw,0) + ' %', fr(P.floodVis,0) + ' %', '0 %', P.floodVis === 0) +
+    row("Part d'urgences", '–', fr(P.urgPct,0) + ' %', 'moins de 20 % en marche normale', P.urgPct <= 20) +
+    row('Alarmes persistantes (plus de 60 min)', '–', P.standing.length, 'moins de 5', P.standing.length < 5) +
+    row('Alarmes bavardes (3 fois en 30 min)', '–', P.chat.length, '0', P.chat.length === 0);
+  $('perfBad').innerHTML = P.bad.length ? '<ol>' + P.bad.map(([k,v]) => `<li>${esc(k)} : ${v} fois</li>`).join('') + '</ol>' : '<p class="muted">Aucune alarme pour le moment.</p>';
+}
+function sendPerfReport(){
+  const P = alarmPerf();
+  const L = [`Bilan du système d'alarmes, ${ddmmyyyy(simMin)} à ${hhmm(simMin)}, sur ${Math.floor(P.span/60)} h ${pad(Math.round(P.span)%60)} min.`, ''];
+  L.push('Références : EEMUA 191 (moins d\'une alarme par 10 min en marche normale, inondation au-delà de 10 alarmes par 10 min) et ISA 18.2 (suppression par conception des alarmes secondaires).', '');
+  L.push(`Détections brutes : ${P.raw}. Alarmes présentées à l'opérateur : ${P.roots}. Réduction obtenue par le regroupement : ${fr(P.reduction,0)} %.`);
+  L.push(`Taux moyen : ${fr(P.rateVis,2)} par 10 min (sans regroupement : ${fr(P.rateRaw,2)}).`);
+  L.push(`Pic : ${P.peakVis} par 10 min (sans regroupement : ${P.peakRaw}).`);
+  L.push(`Temps en inondation : ${fr(P.floodVis,0)} % (sans regroupement : ${fr(P.floodRaw,0)} %).`);
+  L.push(`Part d'urgences : ${fr(P.urgPct,0)} %. Alarmes persistantes : ${P.standing.length}. Alarmes bavardes : ${P.chat.length}.`);
+  L.push(P.ackAvg === null ? "Aucune alarme acquittée sur la période." : `Délai moyen d'acquittement : ${Math.round(P.ackAvg)} min.`);
+  L.push('', 'Équipements les plus bruyants');
+  L.push(P.bad.length ? P.bad.map(([k,v]) => `- ${k} : ${v} fois`).join('\n') : 'Aucun.');
+  L.push('', "Bilan généré automatiquement par l'agent de surveillance (démonstration, données fictives).");
+  sendMail({subject:`Bilan du système d'alarmes du ${ddmmyyyy(simMin)}`, to:S.reportTo, label:null, level:'', kind:'report', body:L.join('\n')});
+  log('info', null, "Bilan du système d'alarmes envoyé.");
+}
+function renderAll(){ renderWells(); renderClock(); renderKpis(); if(currentTab === 'rt') renderDetail(false); else if(currentTab === 'perf') renderPerf(); }
+
+/* =================== Incidents =================== */
+function updateWellIncButtons(){
+  const w = wellById[$('wellSel').value];
+  $('wellTypeLab').textContent = `${TYPE_LAB[w.type]}, manifold ${w.man}`;
+  document.querySelectorAll('#wellIncBtns [data-inc]').forEach(b => {
+    const def = WELL_INC.find(x => x.k === b.dataset.inc);
+    b.disabled = !!(def && def.types && !def.types.includes(w.type));
+  });
+}
+function setWellInc(id, k){
+  const w = wellById[id]; if(!w) return;
+  if(!k){
+    if(!w.incident) return;
+    log('incident', w.id, `Fin de l'incident simulé (${INC_LAB[w.incident]}). L'agent doit constater lui-même le retour à la normale.`);
+    w.incident = null;
+  } else {
+    const def = WELL_INC.find(x => x.k === k); if(def.types && !def.types.includes(w.type)) return;
+    w.incident = k; w.incT = simMin;
+    log('incident', w.id, `Incident simulé : ${INC_LAB[k]}. L'agent n'est pas prévenu : il doit le trouver dans les données.`);
+  }
+  renderAll();
+}
+function setGroupInc(manId, k){
+  const M = manById[manId], R = repById[M.rep];
+  if(!k){
+    if(M.incident){ log('incident', M.label, `Fin de l'incident simulé (${INC_LAB[M.incident]}).`); M.incident = null; }
+    if(R.down){ log('incident', R.label, 'Fin de la panne simulée du répéteur.'); R.down = false; }
+  } else if(k === 'rep'){
+    R.down = true; R.incT = simMin;
+    log('incident', R.label, `Incident simulé : panne du répéteur. Il relie ${wells.filter(w => w.rep === R.id).map(w => w.id).join(', ')}.`);
+  } else {
+    M.incident = k; M.incT = simMin;
+    log('incident', M.label, `Incident simulé : ${INC_LAB[k]}.`);
+  }
+  renderAll();
+}
+function resetAll(){
+  for(const w of wells) if(w.incident) setWellInc(w.id, null);
+  for(const M of manifolds) setGroupInc(M.id, null);
+}
+
+/* =================== Guided demo =================== */
+const DEMO = [
+  {at:0, text:"Démo guidée, environ une minute : 12 puits surveillés de nuit. Tout est normal, l'agent lit les données chaque minute."},
+  {at:2, text:"1 sur 9 : la pression tête de PUITS-01 chute. L'agent compare avec l'injection gas lift, trouve la cause dans le puits, et envoie un SMS au technicien d'astreinte.", run:() => { selectWell('PUITS-01'); setWellInc('PUITS-01','chute'); }},
+  {at:18, text:"Le technicien répond OK : l'alarme est acquittée et l'escalade s'arrête.", run:() => { for(const a of allAlarms) if(a.label === 'PUITS-01' && !a.parent && !a.ack && a.tEnd === null && a.severity === 'urgence') ack(a, a.level); }},
+  {at:24, text:"2 sur 9 : le répéteur radio R2 tombe en panne. 4 puits deviennent muets à la même minute : l'agent conclut au répéteur et envoie un seul SMS au lieu de quatre.", run:() => { setWellInc('PUITS-01', null); setGroupInc('MAN-B','rep'); selectWell('PUITS-05'); }},
+  {at:40, text:"3 sur 9 : la batterie de la RTU de PUITS-12 faiblit. L'agent calcule l'heure probable de la coupure et prévient avant qu'elle arrive.", run:() => { setGroupInc('MAN-B', null); setWellInc('PUITS-12','batterie'); selectWell('PUITS-12'); }},
+  {at:84, text:"4 sur 9 : panne du réseau gas lift du manifold MAN-A. Les baisses de pression des puits touchés sont rattachées à cette alarme, et comme personne ne répond, l'escalade monte au chef de quart puis au superviseur.", run:() => { setWellInc('PUITS-12', null); setGroupInc('MAN-A','glnet'); selectWell('PUITS-02'); }},
+  {at:118, text:"5 sur 9 : la pression annulaire 9 5/8 de PUITS-11 dépasse le seuil de diagnostic de 100 psi et approche la MAASP. C'est une alarme d'intégrité du puits, traitée en urgence même si la production est normale.", run:() => { setGroupInc('MAN-A', null); setWellInc('PUITS-11','ann'); selectWell('PUITS-11'); }},
+  {at:138, text:"6 sur 9 : la vanne de sécurité de PUITS-05 se ferme sans ordre. Le puits est arrêté : regardez le compteur de production différée en haut, en m³ et en dollars.", run:() => { setWellInc('PUITS-11', null); setWellInc('PUITS-05','sdv'); selectWell('PUITS-05'); }},
+  {at:158, text:"7 sur 9 : détection feu sur le site de PUITS-07. C'est la seule alarme où les trois contacts d'astreinte reçoivent le SMS en même temps, sans attendre l'escalade.", run:() => { setWellInc('PUITS-05', null); setWellInc('PUITS-07','feu'); selectWell('PUITS-07'); }},
+  {at:172, text:"8 sur 9 : ouverture du coffret de PUITS-02 en pleine nuit, sans intervention prévue. Vol de batteries et de câbles : l'agent traite l'anti-intrusion comme une urgence.", run:() => { setWellInc('PUITS-07', null); setWellInc('PUITS-02','intrusion'); selectWell('PUITS-02'); }},
+  {at:186, text:"9 sur 9 : le pire cas. La ligne de collecte du manifold MAN-C se bouche pendant que le répéteur R1 tombe en panne. Une dizaine de détections arrivent en quelques minutes ; l'agent n'en présente que deux à l'opérateur. Ouvrez l'onglet « Performance des alarmes » pour voir la différence.", run:() => { setWellInc('PUITS-02', null); setGroupInc('MAN-C','collecte'); setGroupInc('MAN-A','rep'); }},
+  {at:212, text:"Fin de la démo : tout est rétabli, le rapport journalier, la fiche de relève et le bilan des alarmes sont partis. Ouvrez « Déclin long terme » pour l'analyse sur un an.", run:() => { resetAll(); sendDailyReport(false); sendHandoverReport(); sendPerfReport(); }},
+  {at:232, end:true}
+];
+let demo = null;
+function startDemo(){
+  resetAll();
+  demo = {start:simMin, done:0};
+  $('demoBar').hidden = false;
+  showTab('rt');
+  setSpeed(5); if(!running) togglePlay();
+  demoStep();
+}
+function stopDemo(){ demo = null; $('demoBar').hidden = true; }
+function demoStep(){
+  if(!demo) return;
+  const rel = simMin - demo.start;
+  while(demo && demo.done < DEMO.length && DEMO[demo.done].at <= rel){
+    const st = DEMO[demo.done++];
+    if(st.end){ stopDemo(); return; }
+    $('demoText').textContent = st.text;
+    if(st.run) st.run();
+  }
+}
+
+/* =================== Loop =================== */
+function tick(){
+  simMin++;
+  for(const M of manifolds) stepManifold(M, simMin);
+  for(const w of wells){
+    const ok = stepWell(w, simMin), s = w.stats;
+    s.total++;
+    s.prod += w.cur.qo/1440;
+    s.defer += Math.max(0, w.base.qo - w.cur.qo)/1440;
+    if(ok){ s.online++; if(w.incident !== 'capteur'){ s.n++; s.psum += w.cur.p; s.pmin = Math.min(s.pmin, w.cur.p); s.pmax = Math.max(s.pmax, w.cur.p); } }
+  }
+  evaluateAll();
+  checkEscalations();
+  autoReport();
+  demoStep();
+  renderAll();
+}
+function startTimer(){ clearInterval(timer); if(running) timer = setInterval(tick, 1000/speed); }
+function setSpeed(v){ speed = v; document.querySelectorAll('[data-speed]').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.speed === v))); startTimer(); }
+function togglePlay(){ running = !running; $('playBtn').textContent = running ? 'Pause' : 'Reprendre'; startTimer(); }
+
+/* =================== Tabs and settings =================== */
+function showTab(id){
+  currentTab = id;
+  document.querySelectorAll('[role="tab"]').forEach(t => { const on = t.dataset.tab === id; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; });
+  document.querySelectorAll('.tabpanel').forEach(p => { p.hidden = p.id !== 'panel-' + id; });
+  if(id === 'rt') renderDetail(true);
+  if(id === 'decl') renderDecl();
+  if(id === 'perf') renderPerf();
+  if(id === 'mail') renderMailInfo();
+  if(id === 'set') fillSettings();
+}
+function renderMailInfo(){ $('rHour').textContent = pad(S.reportHour) + ':00'; $('rTo').textContent = emailList(S.reportTo).join(', ') || 'aucun destinataire'; }
+function applyTheme(){ if(S.theme === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = S.theme; }
+function fillSettings(){
+  $('fReportTo').value = S.reportTo; $('fAlarmTo').value = S.alarmTo;
+  $('fHour').value = String(S.reportHour); $('fEsc').value = String(S.escMin); $('fChute').value = String(S.thChute); $('fSurp').value = String(S.thSurp);
+  $('fRtu').value = String(S.thRtu); $('fAnn').value = String(S.thAnn); $('fTheme').value = S.theme; $('fSmsWarn').checked = S.smsWarn; $('fPrice').value = String(S.oilPrice); $('fSmsReal').checked = S.smsReal; $('fSmsUrl').value = S.smsUrl;
+  $('rosterEdit').innerHTML = S.roster.map((p,i) => `<div class="rost"><span>${i+1}</span><input type="text" data-r="${i}" data-f="name" aria-label="Nom, contact ${i+1}" placeholder="Nom" value="${esc(p.name)}"><input type="text" data-r="${i}" data-f="role" aria-label="Fonction, contact ${i+1}" placeholder="Fonction" value="${esc(p.role)}"><input type="text" data-r="${i}" data-f="tel" aria-label="Téléphone, contact ${i+1}" placeholder="Téléphone" value="${esc(p.tel)}"></div>`).join('');
+}
+function readSettings(){
+  const st = $('setStatus'); st.classList.remove('err');
+  const rep = emailList($('fReportTo').value), al = emailList($('fAlarmTo').value);
+  const bad = [...rep, ...al].filter(e => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+  if(!rep.length){ st.textContent = 'Ajoutez au moins une adresse pour le rapport journalier.'; st.classList.add('err'); return; }
+  if(bad.length){ st.textContent = `Adresse invalide : ${bad.join(', ')}`; st.classList.add('err'); return; }
+  S.reportTo = rep.join(', '); S.alarmTo = al.join(', ');
+  S.reportHour = +$('fHour').value; S.escMin = +$('fEsc').value; S.thChute = +$('fChute').value; S.thSurp = +$('fSurp').value;
+  S.thRtu = +$('fRtu').value; S.thAnn = +$('fAnn').value; S.theme = $('fTheme').value; S.smsWarn = $('fSmsWarn').checked; S.oilPrice = +$('fPrice').value; S.smsReal = $('fSmsReal').checked; S.smsUrl = $('fSmsUrl').value.trim() || DEFAULTS.smsUrl;
+  document.querySelectorAll('#rosterEdit input').forEach(inp => { const v = inp.value.trim(); if(v || inp.dataset.f === 'tel') S.roster[+inp.dataset.r][inp.dataset.f] = v; });
+  const ok = saveSettings();
+  applyTheme(); renderRoster(); renderKpis(); renderMailInfo();
+  st.textContent = ok ? 'Paramètres enregistrés.' : "Paramètres appliqués pour cette session (enregistrement impossible dans ce navigateur).";
+  log('info', null, `Paramètres mis à jour. Rapport journalier vers ${S.reportTo} à ${pad(S.reportHour)}:00.`);
+}
+
+/* =================== Wire up =================== */
+buildWells();
+for(const w of wells){ const o = document.createElement('option'); o.value = w.id; o.textContent = `${w.id} (${TYPE_LAB[w.type].toLowerCase()})`; $('wellSel').appendChild(o); }
+for(const M of manifolds){ const o = document.createElement('option'); o.value = M.id; o.textContent = `Manifold ${M.id}, répéteur ${M.rep}`; $('manSel').appendChild(o); }
+$('wellIncBtns').innerHTML = WELL_INC.map(x => `<button class="btn" type="button" data-inc="${x.k}">${x.lab}</button>`).join('') + '<button class="btn quiet" type="button" data-inc="none">Rétablir ce puits</button>';
+$('groupIncBtns').innerHTML = GROUP_INC.map(x => `<button class="btn" type="button" data-ginc="${x.k}">${x.lab}</button>`).join('') + '<button class="btn quiet" type="button" data-ginc="none">Rétablir ce groupe</button>';
+$('wellIncBtns').addEventListener('click', e => { const b = e.target.closest('[data-inc]'); if(!b || b.disabled) return; const id = $('wellSel').value; setWellInc(id, b.dataset.inc === 'none' ? null : b.dataset.inc); if(b.dataset.inc !== 'none') selectWell(id); });
+$('groupIncBtns').addEventListener('click', e => { const b = e.target.closest('[data-ginc]'); if(!b) return; setGroupInc($('manSel').value, b.dataset.ginc === 'none' ? null : b.dataset.ginc); });
+$('wellSel').addEventListener('change', () => selectWell($('wellSel').value));
+$('manSel').addEventListener('change', () => { const M = manById[$('manSel').value]; $('manLab').textContent = `${wells.filter(w => w.man === M.id).length} puits`; });
+$('manLab').textContent = '4 puits';
+$('resetAll').addEventListener('click', resetAll);
+$('playBtn').addEventListener('click', togglePlay);
+document.querySelectorAll('[data-speed]').forEach(b => b.addEventListener('click', () => setSpeed(+b.dataset.speed)));
+$('demoBtn').addEventListener('click', startDemo);
+$('demoStop').addEventListener('click', stopDemo);
+document.querySelectorAll('[role="tab"]').forEach((t, i, all) => {
+  t.addEventListener('click', () => showTab(t.dataset.tab));
+  t.addEventListener('keydown', e => { if(e.key === 'ArrowRight' || e.key === 'ArrowLeft'){ const j = (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length; all[j].focus(); showTab(all[j].dataset.tab); } });
+});
+document.querySelectorAll('#winSeg .btn').forEach(b => b.addEventListener('click', () => { declWin = +b.dataset.win; renderDecl(); }));
+$('declReportBtn').addEventListener('click', () => { sendDeclineReport(); $('declReportBtn').textContent = 'Rapport de déclin envoyé'; setTimeout(() => { $('declReportBtn').textContent = 'Envoyer le rapport de déclin par e-mail'; }, 2500); });
+$('declReportBtn2').addEventListener('click', () => { sendDeclineReport(); const n = $('mailList').querySelector('.mailitem'); if(n) n.open = true; });
+$('reportNow').addEventListener('click', () => { const n = sendDailyReport(false); n.open = true; });
+$('gotoSet').addEventListener('click', () => showTab('set'));
+$('handoverBtn').addEventListener('click', () => { sendHandoverReport(); const n = $('mailList').querySelector('.mailitem'); if(n) n.open = true; });
+$('perfReport').addEventListener('click', sendPerfReport);
+$('smsTest').addEventListener('click', async () => {
+  const out = $('smsTestOut'), num = cleanNum($('fSmsTestNum').value);
+  const url = $('fSmsUrl').value.trim() || DEFAULTS.smsUrl;
+  if(!/^\+?\d{8,15}$/.test(num)){ out.textContent = 'Entrez un numéro valide, par exemple +213600000000.'; return; }
+  out.textContent = 'Envoi en cours…';
+  try{
+    const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({to:num, text:`Test de la passerelle SMS de l'agent de surveillance des puits, ${hhmm(simMin)}.`})});
+    out.textContent = r.ok ? 'SMS de test envoyé. Vérifiez le téléphone.' : `La passerelle a répondu ${r.status}.`;
+  }catch(e){ out.textContent = "Passerelle injoignable. Vérifiez que le programme est lancé et que la page est ouverte depuis lui."; }
+});
+document.querySelectorAll('#mailFilter .btn').forEach(b => b.addEventListener('click', () => { mailFilter = b.dataset.f; document.querySelectorAll('#mailFilter .btn').forEach(x => x.setAttribute('aria-pressed', String(x === b))); applyMailFilter(); }));
+$('saveSet').addEventListener('click', readSettings);
+$('resetSet').addEventListener('click', () => { S = clone(DEFAULTS); saveSettings(); applyTheme(); fillSettings(); renderRoster(); renderKpis(); renderMailInfo(); $('setStatus').textContent = 'Valeurs par défaut rétablies.'; });
+
+applyTheme();
+for(const w of wells){ for(let m=-60; m<=0; m++){ if(w === wells[0]) for(const M of manifolds) stepManifold(M, m); stepWell(w, m); } w.lastUpdate = 0; }
+renderRoster();
+buildDeclTable();
+selectWell('PUITS-01');
+renderAll();
+log('info', null, `Surveillance démarrée : ${wells.length} puits, ${manifolds.length} manifolds, ${repeaters.length} répéteurs radio. Rapport journalier prévu à ${pad(S.reportHour)}:00 vers ${S.reportTo}.`);
+startTimer();
+
+})();
+</script>
+</body>
+</html>

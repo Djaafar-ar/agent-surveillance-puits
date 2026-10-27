@@ -1,0 +1,4 @@
+pyyaml>=6.0
+asyncua>=1.1        # OPC UA connector and simulator
+pymodbus>=3.6       # Modbus TCP connector
+pyserial>=3.5       # GSM modem

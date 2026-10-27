@@ -1,0 +1,49 @@
+# Same agent, reading the RTUs (or a SCADA front-end) over Modbus TCP.
+# Only read function codes are used (1, 2, 3, 4). Register maps come from the
+# RTU documentation or from the SCADA I/O list.
+
+site: {name: "Champ Nord", language: fr}
+poll_seconds: 60
+
+connector:
+  type: modbus
+  port: 502
+  timeout_s: 3
+
+learn_minutes: 120
+escalation_min: 10
+daily_report_hour: 7
+
+roster:
+  - {name: "Technicien d'astreinte", role: "Technicien", phone: "+213XXXXXXXXX"}
+  - {name: "Chef de quart", role: "Chef de quart", phone: "+213XXXXXXXXX"}
+
+sms: {type: gsm_modem, port: COM3}
+email: {type: console, alarm_to: ["salle.controle@site.dz"], report_to: ["ingenieur@site.dz"]}
+
+manifolds:
+  - id: MAN-A
+    repeater: R1
+    tags:
+      p_man: {host: 10.0.1.10, unit: 1, kind: input, address: 0, type: float32, word_order: big}
+
+wells:
+  - id: PUITS-01
+    type: gas_lift
+    manifold: MAN-A
+    maasp: 48
+    tags:
+      whp:        {host: 10.0.1.21, unit: 1, kind: input, address: 0, type: float32}
+      ann:        {host: 10.0.1.21, unit: 1, kind: input, address: 2, type: float32}
+      gl_flow:    {host: 10.0.1.21, unit: 1, kind: input, address: 4, type: float32}
+      battery:    {host: 10.0.1.21, unit: 1, kind: input, address: 10, type: uint16, scale: 0.01}
+      sdv_closed: {host: 10.0.1.21, unit: 1, kind: discrete, address: 0}
+      fire:       {host: 10.0.1.21, unit: 1, kind: discrete, address: 1}
+      intrusion:  {host: 10.0.1.21, unit: 1, kind: discrete, address: 2}
+  - id: PUITS-02
+    type: natural
+    manifold: MAN-A
+    maasp: 55
+    tags:
+      whp:        {host: 10.0.1.22, unit: 1, kind: holding, address: 100, type: int16, scale: 0.1}
+      sdv_closed: {host: 10.0.1.22, unit: 1, kind: coil, address: 5, invert: true}   # coil = 1 when OPEN

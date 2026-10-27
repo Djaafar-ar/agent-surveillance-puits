@@ -1,0 +1,17 @@
+# Ne jamais publier de donnees reelles ni de secrets
+.env
+*.env
+secrets*
+donnees-reelles/
+export*
+*.csv
+*.xlsx
+*.xls
+__pycache__/
+.DS_Store
+.venv/
+data/
+config/config.yaml
+config/secrets.env
+certs/
+*.db

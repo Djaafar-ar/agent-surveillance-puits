@@ -1,0 +1,153 @@
+# Well surveillance agent - site configuration (OPC UA)
+# ------------------------------------------------------
+# 1. Copy this file to config/config.yaml and edit it.
+# 2. Put the passwords in config/secrets.env (see secrets.env.example), never here.
+# 3. Check every tag:   python -m agent check  --config config/config.yaml
+# 4. Start:             python -m agent run    --config config/config.yaml
+#
+# The agent only READS. Give it a dedicated SCADA account with read-only rights.
+
+site:
+  name: "Champ Nord"
+  language: fr                 # fr | en
+
+poll_seconds: 60
+
+connector:
+  type: opcua
+  url: "opc.tcp://192.168.10.20:4840"        # OPC UA server of the SCADA or of the historian
+  username_env: SCADA_USER                   # names of environment variables, values in secrets.env
+  password_env: SCADA_PASSWORD
+  # Recommended on a real site: signed and encrypted session.
+  # security: "Basic256Sha256,SignAndEncrypt,certs/agent-cert.der,certs/agent-key.pem"
+  timeout_s: 10
+  # Address pattern of each signal; {id} is replaced by the well or manifold id.
+  # Use "python -m agent browse" to find the real addresses on your SCADA.
+  # Signals your SCADA does not have: just delete the line.
+  # The names below are EXAMPLES: replace them with the real addresses of your SCADA.
+  well_tags:
+    # process (typical well screen)
+    whp: "ns=2;s={id}.PRESSION_TETE"
+    wht: "ns=2;s={id}.TEMP_TETE"
+    line_p: "ns=2;s={id}.PRESSION_LIGNE"           # after the choke
+    arrival_p: "ns=2;s={id}.PRESSION_ARRIVEE"      # "Pression élément arrivée" of the well at its manifold
+    ann: "ns=2;s={id}.PR_ANN_9_5_8"
+    ann_7: "ns=2;s={id}.PR_ANN_7"
+    oil_rate: "ns=2;s={id}.DEBIT_HUILE_CALCULE"
+    gl_flow: "ns=2;s={id}.DEBIT_GL_INJECTE"
+    gl_inj_p: "ns=2;s={id}.PR_INJECTION_GL"
+    gl_setpoint: "ns=2;s={id}.CONSIGNE_DEBIT_GL"
+    gl_valve_pos: "ns=2;s={id}.POSITION_VANNE_GL"
+    gl_mode_auto: "ns=2;s={id}.MODE_AUTO_GL"
+    water_flow: "ns=2;s={id}.DEBIT_EAU_INJECTE"
+    on_test: "ns=2;s={id}.EN_ESSAI"                # well routed to the test line, if the SCADA has it
+    # RTU
+    battery: "ns=2;s={id}.TENSION_BATTERIE"
+    battery_current: "ns=2;s={id}.COURANT_BATTERIE"
+    solar_current: "ns=2;s={id}.COURANT_PANNEAU"
+    solar_voltage: "ns=2;s={id}.TENSION_PANNEAU"
+    cabinet_temp: "ns=2;s={id}.TEMP_COFFRET"
+    io_fault: "ns=2;s={id}.ETAT_CARTES_ES"
+    comm_ok: "ns=2;s={id}.ETAT_RTU"
+    # safety and anti-intrusion
+    sdv_closed: "ns=2;s={id}.SDV_FERMEE"
+    fire: "ns=2;s={id}.DETECTION_FEU"
+    remote_cmd: "ns=2;s={id}.ACTIVATION_TELECOMMANDE"
+    pit_cover_open: "ns=2;s={id}.DALLE_FOSSE_BATTERIE"
+    cabinet_door_open: "ns=2;s={id}.PORTE_COFFRET"
+    shelter_door_open: "ns=2;s={id}.PORTE_SHELTER"
+    concertina_alarm: "ns=2;s={id}.CONCERTINA"
+    presence_5m: "ns=2;s={id}.DETECTION_NIVEAU_5M"
+  manifold_tags:
+    p_man: "ns=2;s={id}.PR_TRANSMETTEUR_PRODUCTION_1"
+    p_test: "ns=2;s={id}.PR_TRANSMETTEUR_TEST_1"
+    p_gl: "ns=2;s={id}.PR_RESEAU_GL"
+
+# Thresholds (defaults shown). To be agreed with the production engineers.
+thresholds:
+  pressure_drop_pct: 20
+  pressure_high_pct: 40
+  rtu_timeout_min: 5
+  rtu_urgent_min: 15
+  annulus_warn_barg: 6.9          # API RP 90 diagnostic threshold (100 psi)
+  annulus_urgent_pct_maasp: 70
+  battery_low_v: 24
+  restart_grace_min: 90
+  choke_dp_rise_pct: 60           # choke plugging (needs line_p)
+  line_dp_rise_pct: 60            # flowline restriction (needs line_p and arrival_p or p_man)
+  gl_below_setpoint_pct: 75
+  solar_fault_min: 90
+  cabinet_temp_max: 65
+  command_window_min: 15          # SDV closing after a remote command = commanded, no SMS
+
+learn_minutes: 120     # time to learn each well's normal values (if not given below)
+baseline_hours: 12     # normal values follow slow changes over this window
+escalation_min: 10
+sms_warnings: false    # true = also send SMS for warnings, not only emergencies
+daily_report_hour: 7
+
+roster:                # on-call order: 1st is paged first, then escalation
+  - {name: "Technicien d'astreinte", role: "Technicien", phone: "+213XXXXXXXXX"}
+  - {name: "Chef de quart", role: "Chef de quart", phone: "+213XXXXXXXXX"}
+  - {name: "Superviseur production", role: "Superviseur", phone: "+213XXXXXXXXX"}
+
+sms:
+  type: gsm_modem      # gsm_modem (recommended) | android_gateway | console
+  port: COM3           # Windows: COMx (Device Manager), Linux: /dev/ttyUSB0
+  baud: 115200
+  # pin_env: SIM_PIN
+  # --- or an Android phone with "SMS Gateway for Android" ---
+  # type: android_gateway
+  # url: "http://192.168.10.50:8080/message"
+  # user_env: SMS_GATEWAY_USER
+  # password_env: SMS_GATEWAY_PASSWORD
+
+email:
+  type: smtp           # smtp | console
+  smtp_host: "smtp.site.dz"
+  smtp_port: 587
+  starttls: true
+  user_env: SMTP_USER
+  password_env: SMTP_PASSWORD
+  from: "agent-surveillance@site.dz"
+  alarm_to: ["salle.controle@site.dz"]
+  report_to: ["ingenieur.production@site.dz", "chef.service@site.dz"]
+
+web:
+  host: 127.0.0.1      # 0.0.0.0 to open the dashboard to the control-room network (password required)
+  port: 8080
+  password_env: DASHBOARD_PASSWORD
+
+storage:
+  path: ../data/agent.db
+
+# Optional: short narrative on top of the daily report, by a language model
+# (OpenAI-compatible API, e.g. a local Ollama server). Detection never uses it.
+llm:
+  enabled: false
+  # url: "http://localhost:11434/v1/chat/completions"
+  # model: "llama3.1"
+
+# Pipe network: zone -> satellite station -> (sub-)manifold -> well.
+# The radio network is separate: give each well (or manifold) its repeater.
+satellites:
+  - {id: SAT-1, zone: ZONE-NORD}
+
+manifolds:
+  - {id: MAN-A, satellite: SAT-1, repeater: R1}
+  - {id: MAN-B, satellite: SAT-1, repeater: R2}
+
+wells:
+  # type: gas_lift | natural | natural_water (natural flow with desalting water)
+  # normal: optional fixed normal values; otherwise learned automatically
+  # potential_m3d: optional, used to count deferred production when the SDV is closed
+  - {id: PUITS-01, type: gas_lift, manifold: MAN-A, maasp: 48, potential_m3d: 46}
+  - {id: PUITS-02, type: natural_water, manifold: MAN-A, repeater: R2, maasp: 52}   # pipes on MAN-A, radio through R2
+  - id: PUITS-03
+    type: natural
+    manifold: MAN-B
+    maasp: 55
+    normal: {whp: 27.4}
+    tags:                         # per-well override of an address
+      whp: "ns=2;s=OUEST.PUITS03.PT_TETE"
+      intrusion: null             # this well has no intrusion contact
