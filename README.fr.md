@@ -71,6 +71,8 @@ python -m agent backtest --config config/config.yaml --csv export.csv --events e
 * `export.csv` : une colonne horodatage, puis une colonne par signal (`PUITS-01.whp`, `MAN-A.p_man`...). Des moyennes horaires suffisent ; les signaux absents sont acceptés.
 * `events.csv` : les vrais événements de la période : `datetime, equipment, type, description`, avec le type `fermeture`, `panne`, `intervention`, `réouverture` ou `essai`. Ils sont rejoués dans la main courante à l'heure où ils se sont produits, comme les opérateurs les auraient écrits.
 
+Les vrais exports sont rarement propres. `python -m agent import` prend l'export de l'historien tel qu'il sort (format long ou large, formats français, encodage Windows, valeurs archivées seulement quand elles changent, lignes de mauvaise qualité, valeurs aberrantes, transmetteurs figés, psi ou kPa), propose la correspondance des tags à partir de la liste des tags, reconnaît les événements d'une main courante écrite à la main, et produit un rapport de qualité des données. `python -m simulator.site_export` génère un tel export simulé pour essayer. Ce qu'il faut demander à un site : [docs/DONNEES.fr.md](docs/DONNEES.fr.md).
+
 Le rapport donne, pour chaque vrai problème, **combien de jours avant** l'agent a prévenu et ce qu'il a dit, les problèmes manqués, les avertissements qui n'ont été suivis de rien, et la charge d'alarmes. Rien n'est envoyé pendant un backtest.
 
 Sur une année simulée avec 11 problèmes cachés (`python -m simulator.export`), l'agent en a annoncé 8 à l'avance (62 jours avant en médiane), en a vu 2 au moment où ils arrivaient (une fuite soudaine et une panne de répéteur, sans signe avant-coureur), et en a manqué 1 : un défaut de vanne de sécurité trouvé lors d'une tournée, invisible dans les données. **Ces chiffres viennent de données simulées. Le vrai test, c'est une année d'historique du site.**
@@ -112,7 +114,7 @@ Une version de la démo qui tourne dans le navigateur, sans installation : **[dj
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # moteur et bout en bout : 130 tests, environ 4 minutes
+python -m pytest tests          # moteur et bout en bout : 135 tests, environ 5 minutes
 python tests/test_demo_page.py  # démo navigateur
 ```
 

@@ -73,6 +73,8 @@ python -m agent backtest --config config/config.yaml --csv export.csv --events e
 * `export.csv`: one timestamp column, then one column per signal (`PUITS-01.whp`, `MAN-A.p_man`...). Hourly averages are enough; missing signals are allowed.
 * `events.csv`: the real events of the period: `datetime, equipment, type, description`, with type `shut_in`, `failure`, `intervention`, `reopen` or `test`. It is replayed into the logbook at the time each event happened, as the operators would have written it.
 
+Real exports are rarely that clean. `python -m agent import` takes the historian export as it comes (long or wide format, French or English formats, Windows encoding, values archived only when they change, bad-quality rows, spikes, stuck transmitters, psi or kPa), proposes the tag mapping from the tag list, classifies a hand-typed French event log, and writes a data-quality report. `python -m simulator.site_export` generates such a messy export to try it. What to ask a site for: [docs/DONNEES.fr.md](docs/DONNEES.fr.md).
+
 The report lists every real problem with **how many days before** the agent warned, what it said, the problems it missed, the warnings that were followed by nothing, and the alarm load. Nothing is sent during a backtest.
 
 On a simulated year with 11 planted problems (`python -m simulator.export`), the agent warned ahead of 8 (median 62 days before), saw 2 as they happened (a sudden leak and a repeater failure, which have no warning signs), and missed 1: a safety valve defect found on a site round, which is not visible in the data. **These figures come from simulated data. The real test is a year of the site's own history.**
@@ -166,7 +168,7 @@ A browser-only version of the demo, with no installation, is available online: *
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # engine and end-to-end: 130 tests, about 4 minutes
+python -m pytest tests          # engine and end-to-end: 135 tests, about 5 minutes
 python tests/test_demo_page.py  # browser demo (needs: python -m playwright install chromium)
 ```
 

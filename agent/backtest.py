@@ -37,6 +37,7 @@ import logging
 import os
 import statistics
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -60,6 +61,7 @@ class Recorder:
         self.cfg, self.engine = cfg, None
         self.journal_mem: list = []
         self.sent_sms = 0
+        self.pages: dict = {}      # alarm (first page) | escal (nobody acknowledges in a backtest) | clear
         self.emails = 0
 
     def journal(self, typ, label, text):
@@ -67,6 +69,7 @@ class Recorder:
 
     def sms(self, idx, text, alarm, kind):
         self.sent_sms += 1
+        self.pages[kind] = self.pages.get(kind, 0) + 1
 
     def alarm_email(self, a, upgraded):
         self.emails += 1
@@ -225,6 +228,7 @@ class Backtest:
         self.workorders = app.workorders.list()
         self.rows = rows
         self.sms = rec.sent_sms
+        self.pages = rec.pages
         alarms = [a for a in app.engine.alarms if a.parent is None]
         self.alarms = [Warning_(a.t0, a.entity, "alarm", a.code, a.title, a.value, t_last=a.t_end or self.t_last) for a in alarms]
         self.findings = sorted(episodes, key=lambda w: w.t)
@@ -292,8 +296,11 @@ class Backtest:
             since = prev.get(e.equipment, -1e18) + 86400
             # a warning counts if it appeared after the previous problem on this equipment and was
             # still active in the lookback window (a finding can stay on for months before the event)
+            # a long-term finding can stay on for months before the event; a real-time alarm only
+            # counts if it was still active within 2 days of the event (an RTU loss 2 months
+            # earlier did not announce this repeater failure)
             cands = [w for w in self.warnings if self._equip_ids(w.entity) & rel and since <= w.t <= e.t + 6 * 3600
-                     and (w.t_last or w.t) >= e.t - self.lookback]
+                     and (w.t_last or w.t) >= e.t - (self.lookback if w.source == "analysis" else 2 * 86400)]
             e.related = cands
             e.n_warn = len(cands)
             if cands:
@@ -321,7 +328,9 @@ class Backtest:
             "median_lead_days": round(statistics.median([e.lead_h / 24 for e in problems if e.result == "ahead"]), 1)
             if any(e.result == "ahead" for e in problems) else None,
             "alarms": len(self.alarms), "alarms_per_day": round(len(self.alarms) / days, 2),
-            "findings": len(self.findings), "sms": self.sms,
+            "findings": len(self.findings), "sms": self.sms, "sms_pages": self.pages.get("alarm", 0),
+            "sms_escalations": self.pages.get("escal", 0),
+            "unconfirmed_by_type": dict(sorted(Counter(w.title for w in self.unconfirmed).items(), key=lambda x: -x[1])),
             "unconfirmed": len(self.unconfirmed),
             "workorders": len(self.workorders),
             "start": datetime.fromtimestamp(self.t_first).isoformat(" ", "minutes") if self.t_first else None,
@@ -367,6 +376,8 @@ class Backtest:
             out.append(f"{datetime.fromtimestamp(e.t):%d/%m/%Y %H:%M}  {e.equipment:<10} {e.text}")
             out.append(f"    -> {self._lead(e, L)}" + (f" : {e.first.title} ({e.first.entity}, {datetime.fromtimestamp(e.first.t):%d/%m/%Y})" if e.first else ""))
         out += ["", L["unconf"].format(n=len(self.unconfirmed))]
+        if self.unconfirmed:
+            out.append("  " + " ; ".join(f"{t} : {n}" for t, n in self.summary["unconfirmed_by_type"].items()))
         for w in self.unconfirmed[:30]:
             out.append(f"  {datetime.fromtimestamp(w.t):%d/%m/%Y %H:%M}  {w.entity:<12} {w.title}")
         out += ["", L["note"]]
@@ -426,6 +437,7 @@ th{{background:#faf9f6;font-weight:600;font-size:13px;color:#4a4843}}
 <div class=k><b>{s['at_time']}</b>{esc(L['k_at'])}</div>
 <div class=k><b>{s['missed']}</b>{esc(L['k_missed'])}</div>
 <div class=k><b>{s['alarms_per_day']}</b>{esc(L['k_rate'])}</div>
+<div class=k><b>{s['sms_pages']}</b>{esc(L['k_pages'])}</div>
 <div class=k><b>{s['unconfirmed']}</b>{esc(L['k_unc'])}</div>
 </div>
 <h2>{esc(L['h_events'])}</h2>
@@ -433,6 +445,7 @@ th{{background:#faf9f6;font-weight:600;font-size:13px;color:#4a4843}}
 {''.join(rows) or f"<tr><td colspan=5>{esc(L['no_events'])}</td></tr>"}</table></div>
 <h2>{esc(L['unconf'].format(n=len(self.unconfirmed)))}</h2>
 <p class=m>{esc(L['unconf_help'])}</p>
+<p>{esc(" ; ".join(f"{t} : {n}" for t, n in s["unconfirmed_by_type"].items()))}</p>
 <div class=wrap><table><tr><th>{L['c_date']}</th><th>{L['c_eq']}</th><th>{L['c_warn']}</th><th>{L['c_src']}</th></tr>{unc}</table></div>
 <div class=note>{esc(L['note'])}</div>
 </main></body></html>"""
@@ -444,7 +457,8 @@ TXT = {
         period="Données du {start} au {end} ({days} jours, une valeur toutes les {interval_s} s)",
         sum1="Problèmes réels dans le journal : {problems}. Prévenus à l'avance : {ahead} (délai médian {median_lead_days} jours). "
              "Détectés au moment : {at_time}. Non vus : {missed}.",
-        sum2="Alarmes présentées à l'opérateur : {alarms} ({alarms_per_day} par jour), SMS qui auraient été envoyés : {sms}.",
+        sum2="Alarmes présentées à l'opérateur : {alarms} ({alarms_per_day} par jour). Alarmes qui auraient réveillé l'astreinte par SMS : "
+             "{sms_pages} (plus {sms_escalations} SMS d'escalade, car personne n'acquitte pendant un backtest).",
         sum3="Constats de l'analyse long terme : {findings}. Avertissements non suivis d'un événement enregistré : {unconfirmed}. "
              "Ordres de travail qui auraient été ouverts : {workorders}.",
         then="ensuite", ahead="Prévenu {d} jours avant", at_time="Détecté au moment", missed="Non vu",
@@ -454,7 +468,7 @@ TXT = {
              "dans les 90 jours qui précèdent. Les résultats dépendent de la qualité du journal des événements. Aucun SMS ni e-mail "
              "n'a été envoyé pendant ce backtest.",
         k_ahead="problèmes prévenus à l'avance", k_lead="jours d'avance (médiane)", k_at="détectés au moment",
-        k_missed="non vus", k_rate="alarmes par jour", k_unc="avertissements sans événement",
+        k_missed="non vus", k_rate="alarmes par jour", k_pages="SMS d'astreinte sur la période", k_unc="avertissements sans événement",
         h_events="Chaque problème réel, et ce que l'agent aurait dit", c_date="Date", c_eq="Équipement", c_ev="Événement",
         c_res="Résultat", c_first="Premier avertissement", c_warn="Avertissement", c_src="Source",
         src_alarm="alarme temps réel", src_analysis="analyse long terme", no_events="Aucun journal d'événements fourni.",
@@ -464,7 +478,8 @@ TXT = {
         period="Data from {start} to {end} ({days} days, one value every {interval_s} s)",
         sum1="Real problems in the event log: {problems}. Warned ahead: {ahead} (median lead {median_lead_days} days). "
              "Detected as it happened: {at_time}. Missed: {missed}.",
-        sum2="Alarms presented to the operator: {alarms} ({alarms_per_day} per day), SMS that would have been sent: {sms}.",
+        sum2="Alarms presented to the operator: {alarms} ({alarms_per_day} per day). Alarms that would have paged the on-call "
+             "engineer: {sms_pages} (plus {sms_escalations} escalation SMS, since nobody acknowledges during a backtest).",
         sum3="Long-term analysis findings: {findings}. Warnings not followed by a logged event: {unconfirmed}. "
              "Work orders that would have been opened: {workorders}.",
         then="then", ahead="Warned {d} days ahead", at_time="Detected as it happened", missed="Missed",
@@ -473,7 +488,7 @@ TXT = {
         note="A warning counts for an event if it concerns the same equipment (or its manifold, repeater or station) within the 90 "
              "days before. Results depend on the quality of the event log. No SMS or e-mail was sent during this backtest.",
         k_ahead="problems warned ahead", k_lead="days of warning (median)", k_at="detected as it happened",
-        k_missed="missed", k_rate="alarms per day", k_unc="warnings with no event",
+        k_missed="missed", k_rate="alarms per day", k_pages="on-call pages over the period", k_unc="warnings with no event",
         h_events="Each real problem, and what the agent would have said", c_date="Date", c_eq="Equipment", c_ev="Event",
         c_res="Result", c_first="First warning", c_warn="Warning", c_src="Source",
         src_alarm="real-time alarm", src_analysis="long-term analysis", no_events="No event log provided.",

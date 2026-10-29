@@ -101,10 +101,14 @@ On peut envoyer le rapport à la main depuis le tableau de bord (bouton « Rappo
 
 ## 8. Avant la mise en service : le backtest
 
-Avant le pilote, demander à l'équipe historien un export d'au moins 6 mois (idéalement 12) de quelques puits, et le journal des événements de la même période (fermetures, réouvertures, pannes, interventions, essais). Puis :
+Avant le pilote, demander à l'équipe historien un export d'au moins 6 mois (idéalement 12) de quelques puits, et le journal des événements de la même période (fermetures, réouvertures, pannes, interventions, essais). Le détail de la demande est dans [DONNEES.fr.md](DONNEES.fr.md). Puis :
 
 ```bat
-.venv\Scripts\python -m agent backtest --config config\config.yaml --csv export.csv --events evenements.csv --out data\backtest
+.venv\Scripts\python -m agent import --config config\config.yaml --data historien.csv --tags liste_tags.csv --guess
+:: vérifier data\import\mapping.yaml avec l'instrumentation, puis :
+.venv\Scripts\python -m agent import --config config\config.yaml --data historien.csv --events journal.csv --mapping data\import\mapping.yaml
+:: lire data\import\quality.html, puis :
+.venv\Scripts\python -m agent backtest --config config\config.yaml --csv data\import\export.csv --events data\import\events.csv
 ```
 
 Le rapport `data\backtest\report.html` montre, pour chaque événement réel, si l'agent aurait prévenu et combien de jours avant. C'est le document à présenter au chef de service. Les colonnes de l'export s'appellent par défaut `PUITS-01.whp` ; sinon, utiliser `--pattern`, par exemple `--pattern "{id}_{signal}"`.

@@ -8,6 +8,8 @@
     python -m agent status     --config config/config.yaml    is the agent running? (exit code 0 = yes)
     python -m agent add-user   --config config/config.yaml --name "K. Benali" --role operator|supervisor|viewer
     python -m agent del-user   --config config/config.yaml --name "K. Benali"
+    python -m agent import     --config config/config.yaml --data historien.csv [--tags liste_tags.csv] [--guess]
+                               [--mapping mapping.yaml] [--events journal.csv]   clean a site export for the backtest
     python -m agent backtest   --config config/config.yaml --csv export.csv --events events.csv [--out data/backtest]
                                replay a historian export and measure what the agent would have caught
 """
@@ -25,7 +27,7 @@ from . import config
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="agent", description="Well surveillance agent (read-only)")
-    ap.add_argument("command", choices=["run", "check", "browse", "test-sms", "test-email", "backtest", "status", "add-user", "del-user"])
+    ap.add_argument("command", choices=["run", "check", "browse", "test-sms", "test-email", "backtest", "status", "add-user", "del-user", "import"])
     ap.add_argument("--config", default=os.environ.get("AGENT_CONFIG", "config/config.yaml"))
     ap.add_argument("--to", help="recipient for test-sms / test-email")
     ap.add_argument("--node", help="browse: start node (default Objects)")
@@ -33,6 +35,11 @@ def main(argv=None):
     ap.add_argument("--no-web", action="store_true")
     ap.add_argument("--name", help="add-user / del-user: person's name")
     ap.add_argument("--role", choices=["viewer", "operator", "supervisor"], default="operator")
+    ap.add_argument("--data", help="import: historian export (long or wide CSV)")
+    ap.add_argument("--tags", help="import: tag list (Tag;Description;Unit) to guess the mapping")
+    ap.add_argument("--mapping", help="import: mapping file (made with --guess, checked by hand)")
+    ap.add_argument("--guess", action="store_true", help="import: only propose a mapping")
+    ap.add_argument("--interval", type=int, default=3600, help="import: grid in seconds (default 3600)")
     ap.add_argument("--csv", help="backtest: historian export (CSV)")
     ap.add_argument("--events", help="backtest: event log (CSV: datetime, equipment, type, description)")
     ap.add_argument("--out", default="data/backtest", help="backtest: output folder")
@@ -81,6 +88,23 @@ def main(argv=None):
             print(e, file=sys.stderr)
             return 2
         print(f"{a.name} ({a.role}) saved in {u.path}")
+        return 0
+
+    if a.command == "import":
+        from . import importer
+        if not a.data:
+            print("import needs --data export.csv", file=sys.stderr)
+            return 2
+        out = a.out if a.out != "data/backtest" else "data/import"
+        res = importer.run(cfg, a.data, out, a.mapping, a.events, a.tags, a.interval, guess_only=a.guess)
+        if a.guess or not a.mapping:
+            print(f"Proposed mapping: {res.get('mapping', os.path.join(out, 'mapping.yaml'))}  -> check it, then run again with --mapping")
+            if a.guess:
+                print(f"{res['mapped']} signals recognised, {len(res['unknown'])} tags not recognised")
+                return 0
+        print(importer.summary_text(res))
+        print(f"\nClean export: {res['export']}" + (f"\nEvents: {res['events']}" if res.get("events") else "")
+              + f"\nQuality report: {os.path.join(out, 'quality.html')}")
         return 0
 
     if a.command == "backtest":
