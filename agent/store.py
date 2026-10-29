@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import date, datetime
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS alarms (id INTEGER, run TEXT, entity TEXT, kind TEXT, code TEXT, severity TEXT,
@@ -28,7 +28,7 @@ class Store:
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.executescript(SCHEMA)
         self.lock = threading.Lock()
-        self.run = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self.run = datetime.now().strftime("%Y%m%d-%H%M%S-%f")   # one id per start of the agent
         self._acc: dict = {}
 
     def _x(self, sql, args=()):
@@ -122,12 +122,31 @@ class Store:
             ns = sorted(r[2] or 0 for r in rows)
             typ = ns[len(ns) // 2]
             rows = [r for r in rows if (r[2] or 0) >= 0.5 * typ]
-        return [(datetime.strptime(d, "%Y-%m-%d").date(), v) for d, v, _ in rows[::-1]]
+        return [(date.fromisoformat(d), v) for d, v, _ in rows[::-1]]
 
     def last_day(self):
         with self.lock:
             r = self.db.execute("SELECT MAX(day) FROM daily_sig").fetchone()
         return datetime.strptime(r[0], "%Y-%m-%d").date() if r and r[0] else None
+
+    def open_alarms_before(self, since: float):
+        """Alarms left open by previous runs (agent stopped or crashed) since a time."""
+        with self.lock:
+            rows = list(self.db.execute(
+                "SELECT run, id, entity, code, severity, t0, ack_idx, ack_t, ack_via, level, notified FROM alarms "
+                "WHERE run != ? AND t_end IS NULL AND t0 >= ?", (self.run, since)))
+        out = []
+        for r in rows:
+            d = dict(zip(("run", "id", "entity", "code", "severity", "t0", "ack_idx", "ack_t", "ack_via", "level", "notified"), r))
+            d["notified"] = json.loads(d["notified"] or "[]")
+            out.append(d)
+        return out
+
+    def drop_alarm_row(self, run, aid):
+        self._x("DELETE FROM alarms WHERE run = ? AND id = ?", (run, aid))
+
+    def close_alarm_row(self, run, aid, t_end):
+        self._x("UPDATE alarms SET t_end = ? WHERE run = ? AND id = ?", (t_end, run, aid))
 
     def alarm_history(self, since: float):
         """Alarms of every run since a timestamp: (entity, code, severity, t0, t_end, parent, ack_t, title)."""

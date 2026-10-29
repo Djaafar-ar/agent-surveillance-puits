@@ -2,7 +2,7 @@
 
 *[English version](README.md)*
 
-Un agent en lecture seule qui surveille des puits pétroliers jour et nuit à partir des données du SCADA. Il détecte les anomalies, trouve la cause probable, prévient l'astreinte par SMS, escalade quand personne ne répond et envoie les rapports par e-mail.
+Un agent en lecture seule qui surveille des puits pétroliers jour et nuit à partir des données du SCADA. Il détecte les anomalies, trouve la cause probable, prévient l'astreinte par SMS, escalade quand personne ne répond, annonce les problèmes lents des semaines à l'avance, et fait le travail de bureau autour : main courante, rapport de production et de production différée, ordres de travail vérifiés dans les données, planning des essais de puits, relève de quart.
 
 Il s'installe sur un PC ou un serveur du site, se connecte au SCADA en **OPC UA** ou en **Modbus TCP** avec un compte en lecture seule, et n'envoie jamais aucune commande aux équipements.
 
@@ -41,6 +41,42 @@ Le rapport part au superviseur (`email.report_to`). Avec `analysis.dispatch_to_t
 
 ![Analyse long terme sur le tableau de bord](docs/img/agent-analyse.png)
 
+## Version 2 : le travail de bureau autour de la surveillance
+
+Regarder l'écran n'est qu'une partie du travail. Autour, la salle de contrôle tient la main courante, tape le rapport de production chaque matin, relance les ordres de travail, planifie les essais de puits et passe la relève. La version 2 fait ce travail avec les opérateurs. La version 1 (surveillance et alarmes seulement) est conservée sur la [branche `v1`](https://github.com/Djaafar-ar/agent-surveillance-puits/tree/v1).
+
+| Ce que l'opérateur faisait à la main | Ce que fait l'agent maintenant |
+|---|---|
+| Main courante papier | Main courante électronique, signée par chaque utilisateur. L'état du puits qui y est écrit (fermé, en essai, en intervention) est utilisé par les règles : un site sans signal de vanne n'a pas de fausse alarme sur un puits fermé |
+| Après un lavage ou un changement de duse, l'ancienne alarme reste | Une intervention écrite dans la main courante fait réapprendre les valeurs normales du puits et ferme les alarmes qu'elle explique ; les tendances repartent de ce jour |
+| Rapport de production tapé chaque matin | Heures en production, en essai, fermé et sans données, huile par puits, **production différée par cause** (la raison écrite dans la main courante), Pareto des causes sur 30 jours, export CSV, envoi chaque matin |
+| Appeler les équipes et relancer au téléphone | **Ordres de travail** ouverts à partir des alarmes qui durent ou des constats long terme, envoyés à la bonne équipe, relancés en cas de retard. Quand l'équipe dit « fait », l'agent **vérifie dans les données** que le problème a disparu, sinon il rouvre l'ordre |
+| Planifier les essais sur un cahier | Puits en retard, planning proposé (un séparateur de test par manifold, les puits en déclin d'abord), contrôle de chaque résultat par rapport au dernier essai validé avant qu'il devienne le débit de référence |
+| Écrire la relève de quart | Écrite automatiquement à chaque changement de quart : ce qui reste ouvert, les puits hors production et pourquoi, ce qui s'est passé, essais et ordres de travail, production différée du quart |
+| « Qu'est-ce qui s'est passé sur le puits 7 cette nuit ? » | L'**assistant** répond à partir des données de l'agent. Sans IA (règles), ou avec un modèle d'IA **installé sur le site** (Ollama) ; toute adresse hors du réseau du site est refusée : les données des puits ne sortent pas du site |
+| Personne ne voit que le PC de surveillance s'est arrêté | Signal de vie et `python -m agent status` pour la supervision du site, alarmes et valeurs apprises conservées après un redémarrage (pas de second SMS), sauvegarde quotidienne de la base, alerte d'espace disque |
+
+**L'agent propose et relance ; les personnes décident et font le travail.** Il n'écrit toujours jamais dans le SCADA. Chaque action sur le tableau de bord est faite par un utilisateur nommé : lecture seule, opérateur ou superviseur (`python -m agent add-user`).
+
+![Ordres de travail](docs/img/v2-work-orders.png)
+
+## Le prouver sur vos propres données : le backtest
+
+Avant de faire confiance à l'agent, un site peut lui faire rejouer un export de l'historien et comparer ce qu'il aurait dit avec ce qui s'est vraiment passé :
+
+```bash
+python -m agent backtest --config config/config.yaml --csv export.csv --events events.csv
+```
+
+* `export.csv` : une colonne horodatage, puis une colonne par signal (`PUITS-01.whp`, `MAN-A.p_man`...). Des moyennes horaires suffisent ; les signaux absents sont acceptés.
+* `events.csv` : les vrais événements de la période : `datetime, equipment, type, description`, avec le type `fermeture`, `panne`, `intervention`, `réouverture` ou `essai`. Ils sont rejoués dans la main courante à l'heure où ils se sont produits, comme les opérateurs les auraient écrits.
+
+Le rapport donne, pour chaque vrai problème, **combien de jours avant** l'agent a prévenu et ce qu'il a dit, les problèmes manqués, les avertissements qui n'ont été suivis de rien, et la charge d'alarmes. Rien n'est envoyé pendant un backtest.
+
+Sur une année simulée avec 11 problèmes cachés (`python -m simulator.export`), l'agent en a annoncé 8 à l'avance (62 jours avant en médiane), en a vu 2 au moment où ils arrivaient (une fuite soudaine et une panne de répéteur, sans signe avant-coureur), et en a manqué 1 : un défaut de vanne de sécurité trouvé lors d'une tournée, invisible dans les données. **Ces chiffres viennent de données simulées. Le vrai test, c'est une année d'historique du site.**
+
+![Rapport de backtest](docs/img/v2-backtest.png)
+
 ## Sûreté par conception
 
 1. **Lecture seule.** Uniquement des lectures OPC UA et les codes fonction Modbus de lecture (1 à 4). Le code ne contient aucun appel d'écriture, et un test échoue si quelqu'un en ajoute un.
@@ -76,7 +112,7 @@ Une version de la démo qui tourne dans le navigateur, sans installation : **[dj
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # moteur et bout en bout : 115 tests, environ 3 minutes
+python -m pytest tests          # moteur et bout en bout : 130 tests, environ 4 minutes
 python tests/test_demo_page.py  # démo navigateur
 ```
 
@@ -84,7 +120,8 @@ python tests/test_demo_page.py  # démo navigateur
 
 - Validé uniquement sur le simulateur et sur des données Modbus et CSV de synthèse. **Il n'a pas encore tourné sur un vrai SCADA.** L'étape suivante est un pilote en parallèle du système existant.
 - Les seuils sont des valeurs de départ, à fixer avec les ingénieurs production de chaque site.
-- L'état des alarmes est gardé en mémoire : après un redémarrage, les alarmes actives sont redétectées et renvoyées.
+- Les chiffres de production sont des estimations si le puits n'a pas de débitmètre : ils utilisent le dernier essai validé, le débit appris ou le potentiel.
+- L'assistant ne répond qu'à partir des données de l'agent ; avec un modèle d'IA local, les réponses restent à vérifier sur le tableau de bord.
 - Ce n'est pas un système de sécurité et il n'est pas certifié.
 
 ## Références

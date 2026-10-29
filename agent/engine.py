@@ -159,6 +159,7 @@ class Engine:
         self.mans: dict[str, Entity] = {}
         self.reps: dict[str, Entity] = {}
         self.sats: dict[str, Entity] = {}
+        self.resume: dict = {}          # alarms open when the agent stopped: (entity, code) -> row
         H = cfg.baseline_hours
         L = cfg.learn_minutes
         maxlen = int(240 * self.spm) + 5
@@ -176,6 +177,7 @@ class Engine:
             e.defer_m3 = 0.0
             e.cnt = {}
             e.last_cmd = None
+            e.manual = None           # status written in the logbook: shut | test | work (None = production)
             self.wells[w.id] = e
             if w.repeater not in self.reps:
                 self.reps[w.repeater] = Entity("repeater", w.repeater, ("Répéteur " if self.lang == "fr" else "Repeater ") + w.repeater)
@@ -210,11 +212,80 @@ class Engine:
                 self._eval_man(m)
             for w in self.wells.values():
                 self._eval_well(w)
-                if w.fresh and w.cur.get("sdv_closed") is True:
+                if (w.fresh and w.cur.get("sdv_closed") is True) or w.manual in ("shut", "work"):
                     rate = w.base["oil_rate"].value if w.base["oil_rate"].ready else w.cfg.potential_m3d
                     if rate:
                         w.defer_m3 += rate * dt / 86400
             self._escalate(now)
+
+    # ------------------------------------------------------------------ logbook
+    def on_test(self, w) -> bool:
+        return bool(w.cur.get("on_test")) or w.manual == "test"
+
+    def is_shut(self, w) -> bool:
+        return bool(w.cur.get("sdv_closed")) or w.manual in ("shut", "work")
+
+    def set_status(self, wid: str, status: str):
+        """Well status written by an operator (sites without a valve or test signal):
+        production | shut | test | work. Back to production starts the restart grace."""
+        with self.lock:
+            w = self.wells[wid]
+            prev, w.manual = w.manual, (None if status in (None, "", "production") else status)
+            if prev in ("shut", "work") and w.manual is None:
+                w.grace_until = self.now + self.th["restart_grace_min"] * 60
+            if prev == "test" and w.manual is None:
+                w.test_until = self.now + self.th["test_grace_min"] * 60
+
+    # ------------------------------------------------------------------ restart
+    def export_baselines(self) -> dict:
+        """Learned normal values, kept on disk so that a restart in the middle of an
+        incident does not learn the incident as normal."""
+        out = {}
+        with self.lock:
+            for kind, ents in (("well", self.wells), ("manifold", self.mans)):
+                for e in ents.values():
+                    for sig, b in e.base.items():
+                        if b.fixed is None and b.buf:
+                            pts = list(b.buf)
+                            step = max(1, len(pts) // 120)
+                            out.setdefault(e.id, {})[sig] = [(round(t), round(v, 4)) for t, v in pts[::step]] + ([pts[-1]] if (len(pts) - 1) % step else [])
+        return out
+
+    def import_baselines(self, data: dict):
+        with self.lock:
+            for eid, sigs in (data or {}).items():
+                e = self.wells.get(eid) or self.mans.get(eid)
+                if e is None:
+                    continue
+                for sig, pts in sigs.items():
+                    b = e.base.get(sig)
+                    if b is not None and b.fixed is None:
+                        b.buf.clear()
+                        b.buf.extend((float(t), float(v)) for t, v in pts)
+                        b._last_t = b.buf[-1][0] if b.buf else -1e18
+                        b._cache = None
+
+    RELEARN = ("DUSE", "LIGNE", "P_CHUTE", "P_HAUTE", "INSTAB", "GL_ECART", "EAU_ARRET")
+
+    def relearn(self, wid: str, note: str = "") -> list[str]:
+        """After an intervention (wash, choke change, repair) the old normal values are no
+        longer valid: forget them, close the alarms the intervention explains, learn again."""
+        closed = []
+        with self.lock:
+            w = self.wells.get(wid)
+            if w is None:
+                return closed
+            for b in w.base.values():
+                if b.fixed is None:
+                    b.buf.clear()
+                    b._cache = None
+            for code in self.RELEARN:
+                a = w.alarms.get(code)
+                if a is not None:
+                    self._clear(w, a)
+                    closed.append(code)
+            self.out.journal("info", wid, fmt(self.lang, "relearn") + (f" ({note})" if note else ""))
+        return closed
 
     def _fresh(self, s: Sample | None) -> bool:
         stale = max(2.5 * self.cfg.poll_seconds, 150)
@@ -269,9 +340,9 @@ class Engine:
                     w.hist[s].append(w.cur[s])
             if w.cur.get("remote_cmd"):
                 w.last_cmd = now
-            if w.cur.get("on_test"):
+            if self.on_test(w):
                 w.test_until = now + self.th["test_grace_min"] * 60
-            quiet = (not w.alarms and not (M.alarms if M else {}) and not w.cur.get("on_test")
+            quiet = (not w.alarms and not (M.alarms if M else {}) and not self.on_test(w) and not w.manual
                      and now >= getattr(w, "grace_until", 0) and now >= getattr(w, "test_until", 0))
             if quiet and not w.whp_bad:
                 for s in LEARNED:
@@ -435,7 +506,9 @@ class Engine:
         d, s = th["pressure_drop_pct"] / 100, th["pressure_high_pct"] / 100
         # After a shut-in the well restarts (unloading): low or unstable pressure is
         # expected for a while and must not raise new alarms.
-        grace = self.now < max(getattr(w, "grace_until", 0), getattr(w, "test_until", 0)) or bool(c.get("on_test"))
+        if w.manual in ("shut", "work"):
+            return          # shut in or under intervention (logbook): pressures are not production pressures
+        grace = self.now < max(getattr(w, "grace_until", 0), getattr(w, "test_until", 0)) or self.on_test(w)
         shut = bool(c.get("sdv_closed")) or w.alarms.get("SDV") is not None
         # choke plugging / flowline restriction, from the pressure lost across the choke and along the line
         if "line_p" not in faulty and len(w.hist["dp_choke"]) >= self.n(5):
@@ -616,6 +689,20 @@ class Engine:
             a.snapshot["cmd"] = True
         T.alarms[code] = a
         self.alarms.append(a)
+        r = self.resume.pop((a.entity, code), None) if self.resume else None
+        if r is not None:
+            # same alarm as before the agent restarted: keep its start, acknowledgement and
+            # escalation state, and do not page anyone again
+            a.t0, a.level, a.notified = r["t0"], r["level"] or 0, list(r["notified"])
+            a.ack = (r["ack_idx"], r["ack_t"], r["ack_via"]) if r["ack_t"] else None
+            a.last_sms = self.now if a.notified else None
+            self._persist(a)
+            if self.store:
+                self.store.drop_alarm_row(r["run"], r["id"])   # the new row carries it on
+            if a.parent is not None:
+                a.parent.children.append(a)
+            self.out.journal("info", a.entity, f"{a.title}: {fmt(self.lang, 'resumed')}")
+            return
         if code == "CARTE":       # transmitter faults already raised on this well: same cause
             self._adopt(a, [x for k_, x in T.alarms.items() if k_ == "CAPTEUR" or k_.startswith("CAPTEUR_")])
         if code == "SAT_HAUTE":   # manifold alarms already raised: same cause

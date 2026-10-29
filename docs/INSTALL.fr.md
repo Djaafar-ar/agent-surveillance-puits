@@ -97,7 +97,52 @@ L'agent garde chaque jour la moyenne, le minimum et le maximum de chaque signal.
 
 Pour que chaque équipe reçoive aussi sa propre liste de travail, renseigner ses adresses dans `analysis.teams` et mettre `dispatch_to_teams: true`. Les équipes possibles sont `production`, `instrumentation`, `telecom`, `maintenance` et `hse`.
 
-On peut envoyer le rapport à la main depuis le tableau de bord (bouton « Rapport hebdomadaire »). Si l'agent est installé sur un site qui a déjà un historique, on peut aussi rejouer un export CSV de l'historien pour remplir les premiers mois.
+On peut envoyer le rapport à la main depuis le tableau de bord (bouton « Rapport hebdomadaire »).
+
+## 8. Avant la mise en service : le backtest
+
+Avant le pilote, demander à l'équipe historien un export d'au moins 6 mois (idéalement 12) de quelques puits, et le journal des événements de la même période (fermetures, réouvertures, pannes, interventions, essais). Puis :
+
+```bat
+.venv\Scripts\python -m agent backtest --config config\config.yaml --csv export.csv --events evenements.csv --out data\backtest
+```
+
+Le rapport `data\backtest\report.html` montre, pour chaque événement réel, si l'agent aurait prévenu et combien de jours avant. C'est le document à présenter au chef de service. Les colonnes de l'export s'appellent par défaut `PUITS-01.whp` ; sinon, utiliser `--pattern`, par exemple `--pattern "{id}_{signal}"`.
+
+## 9. Comptes utilisateurs
+
+Chaque personne a son compte ; tout ce qu'elle fait sur le tableau de bord est signé de son nom.
+
+```bat
+.venv\Scripts\python -m agent add-user --config config\config.yaml --name "K. Benali" --role operator
+.venv\Scripts\python -m agent add-user --config config\config.yaml --name "A. Mansouri" --role supervisor
+.venv\Scripts\python -m agent add-user --config config\config.yaml --name "Direction" --role viewer
+```
+
+* `viewer` : voit tout, ne change rien.
+* `operator` : acquitte, écrit la main courante (notes, état des puits, interventions), saisit les essais, prend et termine les ordres de travail.
+* `supervisor` : en plus, envoie les rapports, valide ou refuse les essais, crée et annule les ordres de travail.
+
+Les mots de passe sont enregistrés sous forme hachée (jamais en clair) dans `data\users.json`. Avec des comptes, le tableau de bord peut être ouvert au réseau de la salle de contrôle (`web.host: 0.0.0.0`).
+
+## 10. Main courante, ordres de travail, essais, relève
+
+* **Main courante** : quand un puits est fermé, mis en essai ou en intervention sans que le SCADA le signale, l'écrire dans l'onglet « Main courante » avec la raison. Cette raison devient la cause de la production différée. Après un lavage, un changement de duse ou une réparation, écrire une « Intervention réalisée » : l'agent réapprend le puits.
+* **Ordres de travail** : renseigner les adresses des équipes dans `analysis.teams`. Quand le travail est fait, cliquer « Fait » : l'agent vérifie pendant 24 h (alarmes) ou 14 jours (analyse long terme) que le problème ne revient pas.
+* **Essais** : saisir chaque résultat dans l'onglet « Essais de puits » ; le superviseur le valide. Le dernier essai validé sert de débit de référence pour le rapport de production.
+* **Relève** : envoyée automatiquement aux heures de `shifts.changes` (06:00 et 18:00 par défaut). Le chef de quart la complète.
+
+## 11. Assistant
+
+Par défaut, l'assistant répond sans IA, à partir de règles (`assistant.mode: rules`). Pour des réponses rédigées par une IA, installer [Ollama](https://ollama.com) sur le PC de l'agent ou sur un serveur du site, télécharger un modèle (`ollama pull qwen2.5:7b`), puis mettre `assistant.mode: local`. L'agent refuse toute adresse en dehors du réseau du site : les données ne sortent pas. Pour désactiver l'assistant : `assistant.mode: off`.
+
+## 12. Surveiller l'agent lui-même
+
+```bat
+.venv\Scripts\python -m agent status --config config\config.yaml
+```
+
+Répond `RUNNING` et le code 0 si l'agent tourne et lit le SCADA, sinon un code d'erreur : à brancher sur la supervision informatique du site. L'agent sauvegarde aussi sa base chaque jour dans `data\backup` (7 jours gardés) et prévient par e-mail si le disque se remplit.
 
 ## Dépannage
 

@@ -164,19 +164,63 @@ T = {
 
 
 class Analyst:
-    def __init__(self, cfg, store, engine=None):
+    def __init__(self, cfg, store, engine=None, interventions=None):
+        """interventions: {equipment id: [date, ...]} of known operations (wash, choke change,
+        bleed-down, battery replaced...), from the logbook and closed work orders. Trends are
+        measured only since the last intervention, so a repair is not mistaken for a change
+        of the well."""
         self.cfg, self.store, self.engine = cfg, store, engine
         self.L = cfg.language
         self.t = T[self.L]
+        self.interventions = {k: sorted(v) for k, v in (interventions or {}).items()}
+        self._mem: dict = {}
+
+    def _series(self, entity, signal, days=400, stat="mean", full_days=False):
+        k = (entity, signal, days, stat, full_days)
+        if k not in self._mem:
+            self._mem[k] = self.store.series(entity, signal, days, stat, full_days=full_days)
+        return self._mem[k]
+
+    def _last_int(self, wid, end):
+        ds = [d for d in self.interventions.get(wid, []) if d <= end]
+        return ds[-1] if ds else None
+
+    def _after(self, wid, pts, end):
+        """Points strictly after the last known intervention on this equipment."""
+        d = self._last_int(wid, end)
+        return [(dd, v) for dd, v in pts if dd > d] if d else pts
+
+    def _noflow(self, w):
+        """Days the well was not flowing although no valve signal says so (export without
+        valve status): line pressure back to the manifold pressure, or wellhead pressure
+        below what is needed to flow. The day after is excluded too (restart)."""
+        k = ("noflow", w.id)
+        if k in self._mem:
+            return self._mem[k]
+        bad = set()
+        dl = self._series(w.id, "dp_line", 400, full_days=True)
+        if len(dl) >= 10:
+            med = statistics.median(v for _, v in dl)
+            if med > 0.5:
+                bad |= {d for d, v in dl if v < 0.3 * med}
+        man = dict(self._series(w.manifold, "p_man", 400, full_days=True)) if w.manifold else {}
+        if man:
+            bad |= {d for d, v in self._series(w.id, "whp", 400, full_days=True) if d in man and v <= man[d] + 0.5}
+        bad |= {d + timedelta(days=1) for d in bad}
+        self._mem[k] = bad
+        return bad
 
     # ------------------------------------------------------------------ helpers
     def _valid(self, wid, sig, days=400, stat="mean"):
         """Daily values excluding days the well was shut in, on test or mostly offline."""
-        pts = self.store.series(wid, sig, days, stat, full_days=True)
+        pts = self._series(wid, sig, days, stat, full_days=True)
         bad = set()
         for s_, lim in (("shut", 0.2), ("test", 0.2)):
-            bad |= {d for d, v in self.store.series(wid, s_, days, full_days=True) if v is not None and v > lim}
-        bad |= {d for d, v in self.store.series(wid, "online", days, full_days=True) if v is not None and v < 0.5}
+            bad |= {d for d, v in self._series(wid, s_, days, full_days=True) if v is not None and v > lim}
+        bad |= {d for d, v in self._series(wid, "online", days, full_days=True) if v is not None and v < 0.5}
+        w = next((w for w in self.cfg.wells if w.id == wid), None)
+        if w is not None:
+            bad |= self._noflow(w)
         return [(d, v) for d, v in pts if d not in bad and v is not None]
 
     def _date(self, days_ahead, end):
@@ -207,31 +251,47 @@ class Analyst:
 
     # ------------------------------------------------------------------ decline
     def _decline(self, w, end):
-        pts = self._valid(w.id, "whp")
+        pts = [p for p in self._valid(w.id, "whp") if p[0] <= end]
         if len(pts) < 21:
             return None
         p30, p60, p365 = window(pts, end, 30), window(pts, end, 60), window(pts, end, 365)
         if len(p60) < 10:
             return None
         # sawtooth (washes): sharp one-day recoveries
+        # (over up to two days: a wash in the middle of a day splits the jump between two daily means)
         jumps = []
-        for (d0, v0), (d1, v1) in zip(pts, pts[1:]):
-            if (d1 - d0).days <= 2 and v1 - v0 > 2.0:
-                jumps.append((d1, v1 - v0))
-        # fit the slope only after the last jump inside each window, so washes do not hide the trend
+        for i in range(1, len(pts)):
+            d1, v1 = pts[i]
+            prev = [v for d, v in pts[max(0, i - 2):i] if (d1 - d).days <= 2]
+            if not prev or v1 - min(prev) <= 2.0:
+                continue
+            if jumps and (d1 - jumps[-1][0]).days <= 2:
+                jumps[-1] = (jumps[-1][0], max(jumps[-1][1], v1 - min(prev)))
+                continue
+            jumps.append((d1, v1 - min(prev)))
+        # fit the slope only after the last jump (wash) or known intervention inside each window,
+        # so washes and repairs do not hide or fake a trend
+        ints = [d for d in self.interventions.get(w.id, []) if d <= end]
+        bounds = [d for d, _ in jumps] + list(ints)
+
+        def seg_of(win, days):
+            last = [d for d in bounds if end - timedelta(days=days) < d <= end]
+            return [(d, v) for d, v in win if not last or d >= max(last)]
+
         def fit(win, days):
-            last = [d for d, _ in jumps if end - timedelta(days=days) < d <= end]
-            seg = [(d, v) for d, v in win if not last or d >= max(last)]
-            return slope_per_day(seg) * 30.4 if len(seg) >= 8 else slope_per_day(win) * 30.4
+            seg = seg_of(win, days)
+            if len(seg) >= 8:
+                return slope_per_day(seg) * 30.4
+            return 0.0 if len(seg) < len(win) else slope_per_day(win) * 30.4
         s60, s30 = fit(p60, 60), fit(p30, 30) if len(p30) >= 8 else 0.0
         s365 = slope_per_day(p365) * 30.4
-        t60pts = window(self._valid(w.id, "wht"), end, 60)
+        t60pts = seg_of(window(self._valid(w.id, "wht"), end, 60), 60)
         t60 = slope_per_day(t60pts) * 30.4 if len(t60pts) >= 10 else None
         # step drop: largest fall between consecutive weeks, away from jumps
         step = None
         for i in range(7, len(pts) - 7):
             d = pts[i][0]
-            if any(abs((d - j).days) <= 10 for j, _ in jumps):
+            if any(abs((d - j).days) <= 10 for j, _ in jumps) or any(abs((d - j).days) <= 10 for j in ints):
                 continue
             before = [v for dd, v in pts[i - 7:i] if (d - dd).days <= 9]
             after = [v for dd, v in pts[i + 1:i + 8] if (dd - d).days <= 9]
@@ -240,7 +300,7 @@ class Analyst:
             drop = mean(before) - mean(after)
             if drop > 2.5 and (step is None or drop > step[1]):
                 step = (d, drop)
-        man = self.store.series(w.manifold, "p_man", 14, full_days=True) if w.manifold else []
+        man = self._series(w.manifold, "p_man", 14, full_days=True) if w.manifold else []
         pmin = (mean(v for _, v in man) if man else 0) + 3
         oil = self._valid(w.id, "oil_rate")
         oil60 = window(oil, end, 60)
@@ -280,7 +340,7 @@ class Analyst:
                 sev = 3 if fast and months < 6 else 2 if fast else 1
                 kind = "fast_decline" if fast else "decline"
                 title, action = t[kind]
-                oil = "-" if r["oil_now"] is None else (f"{f1(r['oil_now'])} m³/j" if self.L == "fr" else f"{f1(r['oil_now'])} m³/d")
+                oil = ("non mesuré" if self.L == "fr" else "not measured") if r["oil_now"] is None else (f"{f1(r['oil_now'])} m³/j" if self.L == "fr" else f"{f1(r['oil_now'])} m³/d")
                 if r["oil_trend"] is not None:
                     oil += f" ({'+' if r['oil_trend'] >= 0 else ''}{f1(r['oil_trend'], 0)} %/{'mois' if self.L == 'fr' else 'month'})"
                 ev = t["decline_ev"].format(s60=f1(s60), s365=f1(r["s365"]), p=f1(r["pnow"]), oil=oil)
@@ -300,17 +360,22 @@ class Analyst:
 
     # ------------------------------------------------------------------ choke
     def _choke(self, w, end):
-        pts = self._valid(w.id, "dp_choke")
+        pts = self._after(w.id, self._valid(w.id, "dp_choke"), end)
         recent, before = window(pts, end, 7), [(d, v) for d, v in window(pts, end, 45) if d <= end - timedelta(days=30)]
         if len(recent) < 4 or len(before) < 4:
             return []
         a, b = mean(v for _, v in before), mean(v for _, v in recent)
         if a <= 0.5:
             return []
+        # the wellhead pressure over the same windows: if it fell as much as the choke drop,
+        # the well is producing less (decline, deposits), the choke itself is not eroded
+        wp = self._after(w.id, self._valid(w.id, "whp"), end)
+        wr_, wb_ = window(wp, end, 7), [(d, v) for d, v in window(wp, end, 45) if d <= end - timedelta(days=30)]
+        dwhp = (mean(v for _, v in wr_) - mean(v for _, v in wb_)) if len(wr_) >= 4 and len(wb_) >= 4 else 0.0
         pct = (b - a) / a * 100
-        if pct > 30 and b - a > 1.5:
+        if pct > 20 and b - a > 1.5:
             kind, key = "choke_trend", "choke_plug"
-        elif pct < -30 and a - b > 1.5:
+        elif pct < -20 and a - b > 1.5 and dwhp > -0.5 * (a - b):
             kind, key = "choke_trend", "choke_erosion"
         else:
             return []
@@ -324,7 +389,7 @@ class Analyst:
         for sig, lab in (("ann", "9 5/8"), ("ann_7", '7"')):
             if sig not in w.tags or (sig == "ann_7" and w.type == "gas_lift"):
                 continue
-            pts = window(self._valid(w.id, sig, 90, "max"), end, 60)
+            pts = self._after(w.id, window(self._valid(w.id, sig, 90, "max"), end, 60), end)
             if len(pts) < 20:
                 continue
             rate = slope_per_day(pts)
@@ -341,7 +406,7 @@ class Analyst:
     # ------------------------------------------------------------------ power
     def _power(self, w, end):
         out = []
-        bat = window(self.store.series(w.id, "battery", 60, "min", full_days=True), end, 45)
+        bat = self._after(w.id, window(self._series(w.id, "battery", 60, "min", full_days=True), end, 45), end)
         if len(bat) >= 14:
             rate = slope_per_day(bat)
             last = bat[-1][1]
@@ -353,7 +418,7 @@ class Analyst:
                 out.append(Finding(w.id, "battery_ageing", 3 if days < 14 else 2, "maintenance", title,
                                    self.t["battery_ev"].format(rate=f1(-rate * 7, 2), v=f1(last, 2), date=self._date(days, end)),
                                    action, days))
-        sol = self.store.series(w.id, "solar_current", 60, "max", full_days=True)
+        sol = self._series(w.id, "solar_current", 60, "max", full_days=True)
         recent, before = window(sol, end, 7), [(d, v) for d, v in window(sol, end, 45) if d <= end - timedelta(days=30)]
         if len(recent) >= 4 and len(before) >= 4:
             a, b = mean(v for _, v in before), mean(v for _, v in recent)
@@ -361,7 +426,7 @@ class Analyst:
                 title, action = self.t["solar_degraded"]
                 out.append(Finding(w.id, "solar_degraded", 1 if b > 0.5 * a else 2, "maintenance", title,
                                    self.t["solar_ev"].format(a=f1(a), b=f1(b), pct=f"{(b - a) / a * 100:+.0f}"), action))
-        temp = window(self.store.series(w.id, "cabinet_temp", 20, "max", full_days=True), end, 14)
+        temp = window(self._series(w.id, "cabinet_temp", 20, "max", full_days=True), end, 14)
         th = self.cfg.thresholds["cabinet_temp_max"] - 5
         hot = [v for _, v in temp if v > th]
         if len(hot) >= 5:
@@ -377,7 +442,7 @@ class Analyst:
         return [r for r in self.store.alarm_history(since) if r[3] < until]
 
     def _radio(self, w, end):
-        on = window(self.store.series(w.id, "online", 40, full_days=True), end, 30)
+        on = window(self._series(w.id, "online", 40, full_days=True), end, 30)
         if len(on) < 10:
             return []
         av = mean(v for _, v in on) * 100

@@ -1,15 +1,31 @@
-"""Dashboard and small JSON API (Python standard library only).
+"""Dashboard and JSON API (Python standard library only).
 
-GET  /                 dashboard
-GET  /api/state        current state (wells, alarms, journal, messages, KPIs)
-POST /api/ack          {"alarm_id": 12, "idx": 0}  acknowledge from the dashboard
-POST /api/report       {"kind": "daily" | "handover" | "weekly"}  send a report now
-GET  /api/analysis     long-term analysis: prioritised findings
-POST /api/sms-in       incoming SMS webhook (Android SMS Gateway): "OK" acknowledges
+GET  /                       dashboard
+GET  /api/me                 who is logged in, and the role
+GET  /api/state              current state (wells, alarms, journal, messages, KPIs)
+GET  /api/analysis           long-term analysis: prioritised findings
+GET  /api/logbook            logbook entries (?equipment=PUITS-07&days=7)
+GET  /api/handover           preview of the shift handover
+GET  /api/production         production of a day (?day=2026-10-28) and deferred production by cause
+GET  /api/production.csv     export (?from=2026-10-01&to=2026-10-28)
+GET  /api/tests              running, overdue, proposed schedule, recent results
+GET  /api/workorders         work orders
+POST /api/ask                {"q": "puits 7 cette nuit ?"}                       viewer
+POST /api/ack                {"alarm_id": 12, "idx": 0}                          operator
+POST /api/logbook            {"kind": "note|status|intervention", "equipment", "status", "text"}   operator
+POST /api/tests/result       {"well", "oil_m3d", "water_m3d", "gas_m3d", "note"}  operator
+POST /api/tests/check        {"id": 3, "ok": true}                               supervisor
+POST /api/workorders/ack     {"id": 5}                                           operator
+POST /api/workorders/done    {"id": 5, "note": "..."}                            operator
+POST /api/workorders/create  {"entity", "title", "team", "detail", "action", "priority", "due_hours"}  supervisor
+POST /api/workorders/cancel  {"id": 5, "reason": "..."}                          supervisor
+POST /api/report             {"kind": "daily|handover|weekly|production"}        supervisor
+POST /api/sms-in             incoming SMS webhook (Android SMS Gateway): "OK" acknowledges
 
 The dashboard listens on 127.0.0.1 by default. To open it to the control-room
-network, set web.host to 0.0.0.0 AND a password (environment variable named
-by web.password_env); the agent refuses to start otherwise.
+network, set web.host to 0.0.0.0 and create accounts (python -m agent add-user)
+or a shared password; the agent refuses to start otherwise. Every change is
+signed with the name of the logged-in person.
 """
 
 from __future__ import annotations
@@ -20,12 +36,20 @@ import json
 import logging
 import os
 import threading
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 from .config import secret
+from .users import allowed
 
 log = logging.getLogger("agent.web")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+LOCAL = {"fr": "poste local", "en": "local desk"}
+
+
+class Denied(Exception):
+    pass
 
 
 def serve(app):
@@ -37,28 +61,49 @@ def serve(app):
         def log_message(self, *a):
             pass
 
-        def _auth(self):
-            if not pw:
-                return True
+        # ---------------------------------------------------------- auth
+        def _who(self):
+            """(name, role) or None after sending 401."""
             h = self.headers.get("Authorization", "")
+            name = p = None
             if h.startswith("Basic "):
                 try:
-                    _, p = base64.b64decode(h[6:]).decode().split(":", 1)
-                    if hmac.compare_digest(p, pw):
-                        return True
+                    name, p = base64.b64decode(h[6:]).decode().split(":", 1)
                 except Exception:  # noqa: BLE001
                     pass
+            if app.users:
+                role = app.users.check(name or "", p or "") if name else None
+                if role:
+                    return name, role
+            elif not pw:
+                return LOCAL[cfg.language], "supervisor"
+            elif p is not None and hmac.compare_digest(p, pw):
+                return (name or LOCAL[cfg.language]), "supervisor"
             self.send_response(401)
             self.send_header("WWW-Authenticate", 'Basic realm="agent"')
+            self.send_header("Content-Length", "0")
             self.end_headers()
-            return False
+            return None
+
+        def _need(self, role, need):
+            if not allowed(role, need):
+                raise Denied(need)
 
         def _json(self, code, obj):
-            data = json.dumps(obj, default=str).encode()
+            data = json.dumps(obj, default=str, ensure_ascii=False).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _raw(self, code, data: bytes, ctype, extra=None):
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(data)
 
@@ -68,6 +113,7 @@ def serve(app):
                 raise ValueError("body too large")
             return json.loads(self.rfile.read(n) or b"{}")
 
+        # ---------------------------------------------------------- GET
         def do_GET(self):
             try:
                 self._get()
@@ -76,48 +122,121 @@ def serve(app):
                 self._json(500, {"error": str(e)})
 
         def _get(self):
-            if not self._auth():
+            who = self._who()
+            if not who:
                 return
-            if self.path in ("/", "/index.html"):
+            u = urlparse(self.path)
+            q = {k: v[-1] for k, v in parse_qs(u.query).items()}
+            p = u.path
+            if p in ("/", "/index.html"):
                 with open(os.path.join(STATIC, "dashboard.html"), "rb") as f:
                     data = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(data)))
-                self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
-                self.end_headers()
-                self.wfile.write(data)
-            elif self.path == "/api/state":
-                self._json(200, app.snapshot())
-            elif self.path == "/api/analysis":
-                self._json(200, {"findings": app.analysis()})
-            else:
-                self._json(404, {"error": "not found"})
+                return self._raw(200, data, "text/html; charset=utf-8", {
+                    "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'",
+                    "X-Frame-Options": "DENY"})
+            if p == "/api/me":
+                return self._json(200, {"name": who[0], "role": who[1], "multi_user": bool(app.users),
+                                        "assistant": cfg.assistant["mode"], "language": cfg.language})
+            if p == "/api/state":
+                return self._json(200, app.snapshot())
+            if p == "/api/analysis":
+                return self._json(200, {"findings": app.analysis()})
+            if p == "/api/logbook":
+                days = float(q.get("days", 2))
+                since = app.engine.now - days * 86400
+                return self._json(200, {"entries": app.logbook.entries(since, None, q.get("equipment") or None, limit=400),
+                                        "statuses": app.logbook.statuses()})
+            if p == "/api/handover":
+                from .logbook import handover
+                s, b = handover(app)
+                return self._json(200, {"subject": s, "body": b})
+            if p == "/api/production":
+                d = date.fromisoformat(q["day"]) if q.get("day") else datetime.fromtimestamp(app.engine.now).date()
+                r = app.production.day(d)
+                r["causes_30d"] = [{"cause": c, "m3": m, "wells": w} for c, m, w in app.production.causes(d - timedelta(days=29), d)]
+                return self._json(200, r)
+            if p == "/api/production.csv":
+                today = datetime.fromtimestamp(app.engine.now).date()
+                d1 = date.fromisoformat(q["to"]) if q.get("to") else today
+                d0 = date.fromisoformat(q["from"]) if q.get("from") else d1 - timedelta(days=30)
+                return self._raw(200, app.production.csv(d0, d1).encode("utf-8-sig"), "text/csv; charset=utf-8",
+                                 {"Content-Disposition": f'attachment; filename="production_{d0}_{d1}.csv"'})
+            if p == "/api/tests":
+                wt = app.welltests
+                return self._json(200, {"running": wt.running(), "overdue": wt.overdue(), "schedule": wt.schedule(14),
+                                        "recent": wt.list(limit=60), "interval_days": cfg.welltests["interval_days"]})
+            if p == "/api/workorders":
+                return self._json(200, {"orders": app.workorders.list(), "summary": app.workorders.summary()})
+            self._json(404, {"error": "not found"})
 
+        # ---------------------------------------------------------- POST
         def do_POST(self):
             try:
                 if self.path.startswith("/api/sms-in"):
                     if hook_token and not hmac.compare_digest(self.path.partition("token=")[2], hook_token):
                         return self._json(403, {"error": "bad token"})
                     b = self._body()
-                    p = b.get("payload", b)
-                    phone = str(p.get("phoneNumber") or p.get("from") or "")
-                    text = str(p.get("message") or p.get("text") or "")
+                    pl = b.get("payload", b)
+                    phone = str(pl.get("phoneNumber") or pl.get("from") or "")
+                    text = str(pl.get("message") or pl.get("text") or "")
                     done = app.engine.ack_from_phone(phone, text)
                     app.out.journal("info", None, f"SMS reçu de {phone} : « {text} »" + (f" → OK {done}" if done else ""))
                     return self._json(200, {"acknowledged": done})
-                if not self._auth():
+                who = self._who()
+                if not who:
                     return
                 if self.headers.get("X-Requested-With") != "agent":   # blocks cross-site form posts
                     return self._json(403, {"error": "forbidden"})
+                name, role = who
                 b = self._body()
-                if self.path == "/api/ack":
-                    ok = app.engine.ack(int(b["alarm_id"]), int(b.get("idx", 0)), "dashboard")
+                p = urlparse(self.path).path
+                if p == "/api/ask":
+                    self._need(role, "viewer")
+                    return self._json(200, app.assistant.answer(str(b.get("q", ""))))
+                if p == "/api/ack":
+                    self._need(role, "operator")
+                    ok = app.engine.ack(int(b["alarm_id"]), int(b.get("idx", 0)), f"dashboard ({name})")
                     return self._json(200 if ok else 409, {"ok": ok})
-                if self.path == "/api/report":
+                if p == "/api/logbook":
+                    self._need(role, "operator")
+                    kind, eq, text = b.get("kind", "note"), (b.get("equipment") or None), str(b.get("text", ""))
+                    if kind == "note":
+                        i = app.logbook.note(text, name, eq)
+                    elif kind == "status":
+                        i = app.logbook.set_status(eq, str(b.get("status")), name, text)
+                    elif kind == "intervention":
+                        i = app.logbook.intervention(eq, text, name)
+                    else:
+                        raise ValueError("kind: note, status or intervention")
+                    return self._json(200, {"ok": True, "id": i})
+                if p == "/api/tests/result":
+                    self._need(role, "operator")
+                    t = app.welltests.record(b["well"], b["oil_m3d"], b.get("water_m3d"), b.get("gas_m3d"), b.get("whp"), name, str(b.get("note", "")))
+                    return self._json(200, t)
+                if p == "/api/tests/check":
+                    self._need(role, "supervisor")
+                    return self._json(200, app.welltests.check(int(b["id"]), bool(b.get("ok")), name))
+                if p == "/api/workorders/ack":
+                    self._need(role, "operator")
+                    return self._json(200, app.workorders.acknowledge(int(b["id"]), name))
+                if p == "/api/workorders/done":
+                    self._need(role, "operator")
+                    return self._json(200, app.workorders.done(int(b["id"]), name, str(b.get("note", ""))))
+                if p == "/api/workorders/create":
+                    self._need(role, "supervisor")
+                    return self._json(200, app.workorders.create(str(b.get("entity", "")), str(b.get("title", "")), str(b.get("team", "")),
+                                                                 str(b.get("detail", "")), str(b.get("action", "")),
+                                                                 int(b.get("priority", 2)), float(b.get("due_hours", 72)), by=name))
+                if p == "/api/workorders/cancel":
+                    self._need(role, "supervisor")
+                    return self._json(200, app.workorders.cancel(int(b["id"]), name, str(b.get("reason", ""))))
+                if p == "/api/report":
+                    self._need(role, "supervisor")
                     app.send_report(b.get("kind", "daily"))
                     return self._json(200, {"ok": True})
                 self._json(404, {"error": "not found"})
+            except Denied as e:
+                self._json(403, {"error": f"role {e} required"})
             except Exception as e:  # noqa: BLE001
                 self._json(400, {"error": str(e)})
 

@@ -15,3 +15,6 @@ config/config.yaml
 config/secrets.env
 certs/
 *.db
+
+# code, not data
+!simulator/export.py

@@ -161,6 +161,11 @@ class Config:
     oil_price_usd: float = 70.0
     satellites: dict = field(default_factory=dict)    # id -> zone
     analysis: dict = field(default_factory=dict)
+    shifts: dict = field(default_factory=dict)
+    workorders: dict = field(default_factory=dict)
+    welltests: dict = field(default_factory=dict)
+    assistant: dict = field(default_factory=dict)
+    maintenance: dict = field(default_factory=dict)
 
     @property
     def samples_per_minute(self) -> float:
@@ -201,6 +206,51 @@ def _analysis(a: dict) -> dict:
     if not 0 <= int(out["weekly_report_day"]) <= 6:
         raise ConfigError("analysis.weekly_report_day: 0 (Monday) to 6 (Sunday)")
     return out
+
+
+def _section(raw: dict, name: str, defaults: dict) -> dict:
+    out = dict(defaults)
+    extra = raw.get(name) or {}
+    if not isinstance(extra, dict):
+        raise ConfigError(f"{name}: expected a block of settings")
+    unknown = set(extra) - set(defaults)
+    if unknown:
+        raise ConfigError(f"{name}: unknown setting(s) {', '.join(sorted(unknown))}. Known: {', '.join(defaults)}")
+    out.update(extra)
+    return out
+
+
+def _shifts(raw):
+    s = _section(raw, "shifts", {"changes": ["06:00", "18:00"], "handover_to": []})
+    for c in s["changes"]:
+        try:
+            h, m = str(c).split(":")
+            assert 0 <= int(h) < 24 and 0 <= int(m) < 60
+        except Exception:  # noqa: BLE001
+            raise ConfigError(f"shifts.changes: '{c}' is not a time like 06:00") from None
+    if not s["changes"]:
+        raise ConfigError("shifts.changes: at least one shift change time")
+    return s
+
+
+def _assistant(raw):
+    a = _section(raw, "assistant", {"mode": "rules", "url": "http://127.0.0.1:11434", "model": "qwen2.5:7b",
+                                    "timeout_s": 60, "allow_remote": False})
+    if a["mode"] not in ("off", "rules", "local"):
+        raise ConfigError("assistant.mode: off, rules (no AI) or local (AI model running on site)")
+    if a["mode"] == "local" and not a["allow_remote"]:
+        from urllib.parse import urlparse
+        import ipaddress
+        host = urlparse(a["url"]).hostname or ""
+        ok = host in ("localhost",)
+        try:
+            ok = ok or ipaddress.ip_address(host).is_private or ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            pass
+        if not ok:
+            raise ConfigError("assistant.url must be on the site network (localhost or a private address): "
+                              "well data must not leave the site")
+    return a
 
 
 def load(path: str) -> Config:
@@ -267,9 +317,10 @@ def load(path: str) -> Config:
 
     web = {"host": "127.0.0.1", "port": 8080, "password_env": "DASHBOARD_PASSWORD"}
     web.update(raw.get("web") or {})
-    if web["host"] not in ("127.0.0.1", "localhost", "::1") and not secret(web.get("password_env")):
-        raise ConfigError("web.host is reachable from the network: set a dashboard password "
-                          f"in the environment variable {web.get('password_env')}")
+    users_file = os.path.join(os.path.dirname(os.path.join(os.path.dirname(path), (raw.get("storage") or {}).get("path", "data/agent.db"))), "users.json")
+    if web["host"] not in ("127.0.0.1", "localhost", "::1") and not secret(web.get("password_env")) and not os.path.exists(users_file):
+        raise ConfigError("web.host is reachable from the network: create accounts (python -m agent add-user) or set a "
+                          f"dashboard password in the environment variable {web.get('password_env')}")
 
     poll = int(raw.get("poll_seconds", 60))
     if not 5 <= poll <= 300:
@@ -292,4 +343,12 @@ def load(path: str) -> Config:
         roster=roster, sms=raw.get("sms") or {"type": "console"}, email=raw.get("email") or {"type": "console"},
         web=web, storage=storage, llm=raw.get("llm") or {"enabled": False},
         manifolds=manifolds, wells=wells, oil_price_usd=float(raw.get("oil_price_usd", 70)), satellites=sats,
-        analysis=_analysis(raw.get("analysis") or {}))
+        analysis=_analysis(raw.get("analysis") or {}),
+        shifts=_shifts(raw),
+        workorders=_section(raw, "workorders", {"enabled": True, "from_alarms_after_min": 30, "from_analysis_min_severity": 2,
+                                                "remind_hours": 24, "verify_hours": 24, "verify_days_analysis": 14,
+                                                "notify_teams": True}),
+        welltests=_section(raw, "welltests", {"interval_days": 30, "duration_hours": 12, "max_change_pct": 20,
+                                              "start_hour": 8}),
+        assistant=_assistant(raw),
+        maintenance=_section(raw, "maintenance", {"backup_keep_days": 7, "retention_days": 730, "min_free_gb": 1.0}))

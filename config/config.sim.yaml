@@ -86,6 +86,44 @@ analysis:
     maintenance: ["maintenance.electrique@exemple.dz"]
     hse: ["hse@exemple.dz"]
 
+# ---------------------------------------------------------------- version 2: office work
+# Shift handover written by the agent at each shift change (e-mailed to handover_to,
+# or to email.report_to if empty, and kept in the logbook).
+shifts:
+  changes: ["06:00", "18:00"]
+  handover_to: []
+
+# Work orders: opened from alarms that last and from long-term findings, sent to the
+# team (analysis.teams), reminded when late, checked in the data once declared done.
+workorders:
+  enabled: true
+  from_alarms_after_min: 30       # an alarm still active after 30 min becomes a work order
+  from_analysis_min_severity: 2   # 3 urgent, 2 to plan, 1 to watch
+  remind_hours: 24
+  verify_hours: 24                # alarm must not come back for 24 h after "done"
+  verify_days_analysis: 14        # long-term finding must be gone 14 days after "done"
+  notify_teams: true
+
+# Well tests: overdue list, proposed plan (one test separator per manifold), result check.
+welltests:
+  interval_days: 30
+  duration_hours: 12
+  max_change_pct: 20              # oil change vs last validated test that needs a look
+  start_hour: 8
+
+# Assistant on the dashboard. rules = no AI. local = an AI model running ON SITE
+# (Ollama on this PC or a server of the site network); any other address is refused.
+assistant:
+  mode: rules                     # off | rules | local
+  url: "http://127.0.0.1:11434"
+  model: "qwen2.5:7b"
+
+# Running for months without anyone looking.
+maintenance:
+  backup_keep_days: 7
+  retention_days: 730
+  min_free_gb: 1.0
+
 web:
   host: 127.0.0.1
   port: 8080

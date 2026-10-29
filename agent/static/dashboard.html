@@ -65,6 +65,29 @@ ul.log li[data-type=detect] .t,ul.log li[data-type=escal] .t{color:var(--bad)}
 ul.log li[data-type=ack] .t,ul.log li[data-type=clear] .t{color:var(--ok)}
 .empty{color:var(--muted)}
 footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
+nav.tabs{display:flex;flex-wrap:wrap;gap:4px;margin:14px 0 4px;border-bottom:1px solid var(--line)}
+nav.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:8px 12px;font-weight:600;color:var(--muted)}
+nav.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--ink)}
+nav.tabs .cnt{display:inline-block;min-width:18px;padding:0 5px;margin-left:5px;border-radius:9px;background:var(--bad);color:#fff;font-size:.75rem}
+.user{font-size:.85rem;color:var(--muted);margin-top:4px}
+form.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end;margin:0 0 6px}
+form.f label{display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted)}
+form.f .wide{grid-column:1/-1}
+input,textarea{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:6px 8px;border-radius:6px;width:100%}
+textarea{min-height:60px;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.chip{padding:3px 10px;border-radius:999px;background:var(--chip);font-size:.85rem}
+.wo{border:1px solid var(--line);border-left:5px solid var(--muted);border-radius:6px;padding:10px 12px;margin:0 0 10px;background:var(--bg)}
+.wo[data-p="3"]{border-left-color:var(--bad)} .wo[data-p="2"]{border-left-color:var(--warn)}
+.wo p{margin:3px 0} .wo .meta{color:var(--muted);font-size:.85rem}
+.wo pre,.pre{white-space:pre-wrap;font:inherit;font-size:.88rem;margin:4px 0;color:var(--muted)}
+.bar{height:10px;background:var(--warn);border-radius:3px}
+.chat{max-height:460px;overflow:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.msg{padding:8px 12px;border-radius:8px;max-width:90%;white-space:pre-wrap}
+.msg.q{align-self:flex-end;background:var(--ink);color:var(--panel)}
+.msg.a{align-self:flex-start;background:var(--bg);border:1px solid var(--line)}
+.status-pill{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.ro [data-role]{display:none!important}
 </style>
 </head>
 <body>
@@ -77,8 +100,18 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
   <div style="text-align:right">
     <div class="clock" id="clock">--:--</div>
     <span class="badge" id="link">…</span>
+    <div class="user" id="user"></div>
   </div>
 </header>
+<nav class="tabs" role="tablist" id="tabs">
+  <button type="button" role="tab" data-tab="surv" aria-selected="true">Surveillance</button>
+  <button type="button" role="tab" data-tab="prod" aria-selected="false">Production</button>
+  <button type="button" role="tab" data-tab="wo" aria-selected="false">Ordres de travail</button>
+  <button type="button" role="tab" data-tab="tests" aria-selected="false">Essais de puits</button>
+  <button type="button" role="tab" data-tab="log" aria-selected="false">Main courante</button>
+  <button type="button" role="tab" data-tab="ask" aria-selected="false">Assistant</button>
+</nav>
+<div data-panel="surv">
 
 <div class="kpis" id="kpis"></div>
 
@@ -101,12 +134,13 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
     </section>
   </div>
   <div>
-    <section>
+    <section data-role="supervisor">
       <h2><span id="hActions">Rapports</span></h2>
       <div class="ackrow">
         <button type="button" id="btnDaily">Envoyer le rapport journalier</button>
         <button type="button" id="btnHand">Relève de quart</button>
         <button type="button" id="btnWeek">Rapport hebdomadaire</button>
+        <button type="button" id="btnProd">Rapport de production</button>
       </div>
       <p class="empty" id="repStatus" role="status"></p>
     </section>
@@ -119,6 +153,98 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
       <ul class="log" id="msgs"></ul>
     </section>
   </div>
+</div>
+</div>
+
+<div data-panel="prod" hidden>
+  <section>
+    <h2><span id="hProd">Production du jour</span><small><input type="date" id="prodDay" style="width:auto"> <a id="prodCsv" href="#">CSV</a></small></h2>
+    <div class="kpis" id="prodKpi"></div>
+    <div class="wrap"><table><thead><tr id="prodHead"></tr></thead><tbody id="prodRows"></tbody></table></div>
+    <p class="empty" id="prodNote"></p>
+  </section>
+  <section>
+    <h2><span id="hCauses">Production différée sur 30 jours, par cause</span></h2>
+    <div id="causes"></div>
+  </section>
+</div>
+
+<div data-panel="wo" hidden>
+  <section>
+    <h2><span id="hWo">Ordres de travail</span><small><label><input type="checkbox" id="woAll" style="width:auto"> <span id="woAllLab">voir aussi les clos</span></label></small></h2>
+    <div class="chips" id="woSum"></div>
+    <div id="woList"></div>
+  </section>
+  <section data-role="supervisor">
+    <h2><span id="hWoNew">Nouvel ordre de travail</span></h2>
+    <form class="f" id="woForm">
+      <label><span id="lWoEq">Équipement</span><select name="entity" class="eqsel"></select></label>
+      <label><span id="lWoTeam">Équipe</span><select name="team" id="teamSel"></select></label>
+      <label><span id="lWoPrio">Priorité</span><select name="priority"><option value="3">3</option><option value="2" selected>2</option><option value="1">1</option></select></label>
+      <label><span id="lWoDue">Délai (heures)</span><input name="due_hours" type="number" value="72" min="1"></label>
+      <label class="wide"><span id="lWoTitle">Titre</span><input name="title" required></label>
+      <label class="wide"><span id="lWoDetail">Constat</span><textarea name="detail"></textarea></label>
+      <label class="wide"><span id="lWoAction">Action demandée</span><input name="action"></label>
+      <div><button class="primary" type="submit" id="woSubmit">Créer</button></div>
+    </form>
+    <p class="empty" id="woMsg" role="status"></p>
+  </section>
+</div>
+
+<div data-panel="tests" hidden>
+  <div class="grid">
+    <div>
+      <section><h2><span id="hRun">Essais en cours</span></h2><div id="tRun"></div></section>
+      <section><h2><span id="hPlan">Planning proposé (14 jours)</span><small id="tPlanNote"></small></h2>
+        <div class="wrap"><table><thead><tr id="tPlanHead"></tr></thead><tbody id="tPlan"></tbody></table></div></section>
+      <section><h2><span id="hRes">Derniers résultats</span></h2><div id="tRes"></div></section>
+    </div>
+    <div>
+      <section data-role="operator"><h2><span id="hTestForm">Saisir un résultat d'essai</span></h2>
+        <form class="f" id="testForm">
+          <label><span id="lTWell">Puits</span><select name="well" class="wellsel"></select></label>
+          <label><span id="lTOil">Huile (m³/j)</span><input name="oil_m3d" type="number" step="0.1" min="0" required></label>
+          <label><span id="lTWat">Eau (m³/j)</span><input name="water_m3d" type="number" step="0.1" min="0"></label>
+          <label><span id="lTGas">Gaz (Sm³/j)</span><input name="gas_m3d" type="number" step="1" min="0"></label>
+          <label class="wide"><span id="lTNote">Remarque</span><input name="note"></label>
+          <div><button class="primary" type="submit" id="tSubmit">Enregistrer</button></div>
+        </form>
+        <p class="empty" id="testMsg" role="status"></p></section>
+      <section><h2><span id="hOver">Puits en retard d'essai</span></h2><div id="tOver"></div></section>
+    </div>
+  </div>
+</div>
+
+<div data-panel="log" hidden>
+  <div class="grid">
+    <div>
+      <section><h2><span id="hLog">Main courante</span><small><select id="logFilter" class="eqsel" data-all="1"></select></small></h2>
+        <ul class="log" id="logList" style="max-height:640px"></ul></section>
+    </div>
+    <div>
+      <section data-role="operator"><h2><span id="hLogForm">Écrire dans la main courante</span></h2>
+        <form class="f" id="logForm">
+          <label><span id="lLKind">Type</span><select name="kind" id="logKind"></select></label>
+          <label><span id="lLEq">Équipement</span><select name="equipment" class="eqsel" data-none="1"></select></label>
+          <label id="statusWrap" hidden><span id="lLSt">Nouvel état</span><select name="status" id="logStatus"></select></label>
+          <label class="wide"><span id="lLText">Texte</span><textarea name="text" required></textarea></label>
+          <div><button class="primary" type="submit" id="lSubmit">Enregistrer</button></div>
+        </form>
+        <p class="empty" id="logMsg" role="status"></p></section>
+      <section><h2><span id="hHand">Relève de quart (aperçu)</span><small><button type="button" id="btnHandPrev">Aperçu</button></small></h2>
+        <div class="pre" id="handText"></div></section>
+    </div>
+  </div>
+</div>
+
+<div data-panel="ask" hidden>
+  <section>
+    <h2><span id="hAsk">Demander à l'agent</span><small id="askMode"></small></h2>
+    <div class="chat" id="chat"></div>
+    <div class="chips" id="askSug"></div>
+    <form class="f" id="askForm"><label class="wide"><span id="lAsk">Question</span><input name="q" autocomplete="off" required></label>
+      <div><button class="primary" type="submit" id="askBtn">Demander</button></div></form>
+  </section>
 </div>
 <footer id="foot"></footer>
 </main>
@@ -155,8 +281,14 @@ const num = (v,d=1) => (typeof v === "number" && isFinite(v)) ? v.toLocaleString
 
 async function post(path, body){
   const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"agent"}, body:JSON.stringify(body)});
-  return r.json();
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok && r.status !== 409) throw new Error(j.error || r.status);
+  return j;
 }
+async function getj(path){ const r = await fetch(path, {cache:"no-store"}); if(!r.ok) throw new Error(r.status); return r.json(); }
+let ME = {name:"", role:"viewer"};
+const RANK = {viewer:0, operator:1, supervisor:2};
+const can = need => (RANK[ME.role] ?? -1) >= RANK[need];
 function spark(h){
   if(!h || h.length < 2) return "";
   const mn = Math.min(...h), mx = Math.max(...h), sp = Math.max(mx - mn, 2);
@@ -194,7 +326,7 @@ function render(s){
       <p class="act">→ ${esc(a.action)}</p>
       <p class="meta">${a.notified.length ? L.notified + " " + a.notified.map(i => esc(s.roster[i].name)).join(", ") : ""}</p>
       ${a.severity === "urgence" ? (a.ack ? `<p class="meta okv">${L.acked} ${esc(s.roster[a.ack.idx].name)} (${esc(a.ack.via)}) ${hhmm(a.ack.t)}</p>`
-        : `<div class="ackrow"><span class="meta">${L.ackBy}</span>${s.roster.map((c,i) => `<button type="button" data-ack="${a.id}" data-idx="${i}">${esc(c.name)}</button>`).join("")}</div>`) : ""}
+        : !can("operator") ? "" : `<div class="ackrow"><span class="meta">${L.ackBy}</span>${s.roster.map((c,i) => `<button type="button" data-ack="${a.id}" data-idx="${i}">${esc(c.name)}</button>`).join("")}</div>`) : ""}
     </div>`).join("") : `<p class="empty">${L.none}</p>`;
 
   // wells
@@ -207,7 +339,8 @@ function render(s){
     for(const w of s.wells.filter(x => x.manifold === m.id)){
       if(w.state === "urgence") nu++; else if(w.state === "avert") na++;
       const day = s.language === "en" ? "d" : "j", v = w.values, inj = w.type === "gas_lift" ? `${num(v.gl_flow,0)} Sm³/${day}` : w.type === "natural_water" ? `${num(v.water_flow)} m³/${day}` : "–";
-      const st = w.alarms.length ? w.alarms.map(a => esc(a.title) + (a.parent ? " ↳" : "")).join(", ") : (w.learning ? `<span class="warnv">${L.learning}</span>` : (v.on_test ? (s.language === "en" ? "On test" : "En essai") : L.normal));
+      const man = w.manual ? `<span class="warnv">${esc(V().stat[w.manual])}${w.status_note ? " : " + esc(w.status_note) : ""}</span>` : "";
+      const st = w.alarms.length ? w.alarms.map(a => esc(a.title) + (a.parent ? " ↳" : "")).join(", ") + (man ? "<br>" + man : "") : (man || (w.learning ? `<span class="warnv">${L.learning}</span>` : (v.on_test ? (s.language === "en" ? "On test" : "En essai") : L.normal)));
       const radio = w.age_min >= 2 ? `<span class="bad">${L.offline} ${Math.round(w.age_min)} min</span>` : `<span class="okv">${L.online}</span><br><span class="sub2">${num(v.battery,1)} V</span>`;
       rows.push(`<tr data-state="${w.state}"><td><strong>${esc(w.id)}</strong><br><span class="sub2">${esc(L.types[w.type])}</span></td>
         <td class="num">${num(v.whp)} Barg</td><td>${spark(w.hist)}</td><td class="num">${num(v.line_p)}</td><td class="num">${num(v.oil_rate)} m³/${day}</td>
@@ -227,6 +360,7 @@ document.addEventListener("click", async e => {
 $("btnDaily").addEventListener("click", async () => { await post("/api/report", {kind:"daily"}); $("repStatus").textContent = L.sent; });
 $("btnHand").addEventListener("click", async () => { await post("/api/report", {kind:"handover"}); $("repStatus").textContent = L.sent; });
 $("btnWeek").addEventListener("click", async () => { await post("/api/report", {kind:"weekly"}); $("repStatus").textContent = L.sent; });
+$("btnProd").addEventListener("click", async () => { await post("/api/report", {kind:"production"}); $("repStatus").textContent = L.sent; });
 async function refreshAnalysis(){
   try{
     const r = await fetch("/api/analysis", {cache:"no-store"}); if(!r.ok) return;
@@ -244,6 +378,213 @@ async function refresh(){
   catch(e){ const lk = $("link"); lk.textContent = "Agent injoignable / agent unreachable"; lk.className = "badge bad"; }
 }
 refresh(); setInterval(refresh, 3000);
+
+// ------------------------------------------------------------------ v2: office work
+const TX2 = {
+  fr:{tabs:{surv:"Surveillance",prod:"Production",wo:"Ordres de travail",tests:"Essais de puits",log:"Main courante",ask:"Assistant"},
+      roles:{viewer:"lecture seule",operator:"opérateur",supervisor:"superviseur"},
+      stat:{production:"En production",shut:"Fermé",test:"En essai",work:"En intervention"},
+      kinds:{note:"Note",status:"Changement d'état d'un puits",intervention:"Intervention réalisée",handover:"Relève",system:"Système"},
+      teams:{production:"Production",instrumentation:"Instrumentation",telecom:"Télécom / radio",maintenance:"Maintenance électrique",hse:"Intégrité / HSE"},
+      wost:{open:"ouvert",acknowledged:"pris en charge",done:"fait, vérification en cours",verified:"vérifié",reopened:"rouvert",cancelled:"annulé"},
+      prodHead:["Puits","Production h","Essai h","Fermé h","Sans données h","Huile m³","Différée m³","Cause"],
+      prodK:["huile (m³)","production différée (m³)","heures-puits sans données"], est:"* estimation : pas de débitmètre, débit de référence (dernier essai validé, sinon appris ou potentiel).",
+      woSum:{open:"ouverts",overdue:"en retard",done_waiting_check:"en vérification",verified:"vérifiés",reopened:"rouverts"},
+      due:"à faire avant", late:"EN RETARD", take:"Je prends", done:"Fait", cancel:"Annuler", notePh:"ce qui a été fait", reasonPh:"raison",
+      none:"Aucun ordre de travail.", created:"Ordre de travail créé.", saved:"Enregistré.", by:"par",
+      tPlanHead:["Date","Manifold","Puits","Raison"], run0:"Aucun essai en cours.", over0:"Aucun puits en retard.", never:"jamais testé",
+      plan:"Planning proposé (14 jours)", src:{alarm:"alarme",analysis:"analyse long terme",manual:"manuel"}, days:"jours", validate:"Valider", reject:"Refuser", verdict:"Contrôle", tStat:{running:"en cours",ended:"terminé, résultat à saisir",to_validate:"à valider",validated:"validé",rejected:"refusé"},
+      noneEq:"(aucun)", all:"Tout le site", log0:"Rien dans la main courante sur 7 jours.", askPh:"puits 7 cette nuit ?",
+      mode:{rules:"sans IA (règles)",local:"IA locale sur le site",off:"désactivé"},
+      sug:["Alarmes en cours","Quels puits sont fermés ?","Production différée hier","Essais en retard","Ordres de travail","Priorités de la semaine"],
+      ask0:"Posez une question sur les puits, les alarmes, la production, les essais ou les ordres de travail.", err:"Erreur"},
+  en:{tabs:{surv:"Monitoring",prod:"Production",wo:"Work orders",tests:"Well tests",log:"Logbook",ask:"Assistant"},
+      roles:{viewer:"read-only",operator:"operator",supervisor:"supervisor"},
+      stat:{production:"Producing",shut:"Shut in",test:"On test",work:"Under intervention"},
+      kinds:{note:"Note",status:"Well status change",intervention:"Intervention done",handover:"Handover",system:"System"},
+      teams:{production:"Production",instrumentation:"Instrumentation",telecom:"Telecom / radio",maintenance:"Electrical maintenance",hse:"Well integrity / HSE"},
+      wost:{open:"open",acknowledged:"taken",done:"done, being checked",verified:"verified",reopened:"reopened",cancelled:"cancelled"},
+      prodHead:["Well","Producing h","Test h","Shut h","No data h","Oil m³","Deferred m³","Cause"],
+      prodK:["oil (m³)","deferred production (m³)","well-hours without data"], est:"* estimate: no flow meter, reference rate (last validated test, else learned or potential).",
+      woSum:{open:"open",overdue:"overdue",done_waiting_check:"being checked",verified:"verified",reopened:"reopened"},
+      due:"due", late:"OVERDUE", take:"I take it", done:"Done", cancel:"Cancel", notePh:"what was done", reasonPh:"reason",
+      none:"No work order.", created:"Work order created.", saved:"Saved.", by:"by",
+      tPlanHead:["Date","Manifold","Well","Reason"], run0:"No test running.", over0:"No well overdue.", never:"never tested",
+      plan:"Proposed plan (14 days)", src:{alarm:"alarm",analysis:"long-term analysis",manual:"manual"}, days:"days", validate:"Validate", reject:"Reject", verdict:"Check", tStat:{running:"running",ended:"ended, result to enter",to_validate:"to validate",validated:"validated",rejected:"rejected"},
+      noneEq:"(none)", all:"Whole site", log0:"Nothing in the logbook over 7 days.", askPh:"well 7 last night?",
+      mode:{rules:"no AI (rules)",local:"local AI on site",off:"off"},
+      sug:["Active alarms","Which wells are shut in?","Deferred production yesterday","Overdue tests","Work orders","This week's priorities"],
+      ask0:"Ask about wells, alarms, production, tests or work orders.", err:"Error"}
+};
+const V = () => TX2[(lastState && lastState.language) || ME.language || "fr"] || TX2.fr;
+const dmy = t => { const d = new Date(t*1000); return d.toLocaleDateString(LOC, {day:"2-digit",month:"2-digit"}) + " " + hhmm(t); };
+let TAB = "surv";
+function showTab(t){
+  TAB = t;
+  document.querySelectorAll("[data-panel]").forEach(p => p.hidden = p.dataset.panel !== t);
+  document.querySelectorAll("#tabs [data-tab]").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+  try{ localStorage.setItem("tab", t); }catch(e){}
+  loadTab();
+}
+$("tabs").addEventListener("click", e => { const b = e.target.closest("[data-tab]"); if(b) showTab(b.dataset.tab); });
+function fillSelects(){
+  if(!lastState) return;
+  const wells = lastState.wells.map(w => w.id), others = [...lastState.manifolds.map(m => m.id), ...new Set(lastState.manifolds.map(m => m.repeater))];
+  document.querySelectorAll("select.eqsel").forEach(sel => {
+    if(sel.options.length) return;
+    const first = sel.dataset.all ? `<option value="">${esc(V().all)}</option>` : sel.dataset.none ? `<option value="">${esc(V().noneEq)}</option>` : "";
+    sel.innerHTML = first + [...wells, ...others].map(x => `<option>${esc(x)}</option>`).join("");
+  });
+  document.querySelectorAll("select.wellsel").forEach(sel => { if(!sel.options.length) sel.innerHTML = wells.map(x => `<option>${esc(x)}</option>`).join(""); });
+  if(!$("teamSel").options.length) $("teamSel").innerHTML = Object.entries(V().teams).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+  if(!$("logKind").options.length) $("logKind").innerHTML = ["note","status","intervention"].map(k => `<option value="${k}">${esc(V().kinds[k])}</option>`).join("");
+  if(!$("logStatus").options.length) $("logStatus").innerHTML = Object.entries(V().stat).map(([k,v]) => `<option value="${k}">${esc(v)}</option>`).join("");
+}
+function labels(){
+  const X = V();
+  document.querySelectorAll("#tabs [data-tab]").forEach(b => { const c = b.querySelector(".cnt"); b.textContent = X.tabs[b.dataset.tab]; if(c) b.appendChild(c); });
+  $("user").textContent = ME.name ? `${ME.name} · ${X.roles[ME.role] || ME.role}` : "";
+  document.querySelector('[data-tab="ask"]').hidden = ME.assistant === "off";
+  document.querySelectorAll("[data-role]").forEach(el => el.hidden = !can(el.dataset.role));
+}
+async function loadTab(){
+  fillSelects(); labels();
+  try{
+    if(TAB === "prod") await loadProd();
+    else if(TAB === "wo") await loadWo();
+    else if(TAB === "tests") await loadTests();
+    else if(TAB === "log") await loadLog();
+    else if(TAB === "ask") initAsk();
+  }catch(e){ console.log(e); }
+}
+// ---- production
+async function loadProd(){
+  const X = V(), dIn = $("prodDay");
+  if(!dIn.value && lastState){ const d = new Date(lastState.now*1000); dIn.value = d.toISOString().slice(0,10); }
+  const r = await getj("/api/production" + (dIn.value ? "?day=" + dIn.value : ""));
+  $("hProd").textContent = X.tabs.prod;
+  const to = r.day, from = new Date(new Date(r.day).getTime() - 30*86400000).toISOString().slice(0,10);
+  $("prodCsv").href = `/api/production.csv?from=${from}&to=${to}`;
+  $("prodKpi").innerHTML = [[num(r.oil_m3,1),""],[num(r.defer_m3,1), r.defer_m3 > 1 ? "bad":""],[num(r.no_data_h,1), r.no_data_h > 1 ? "warnv":""]]
+    .map(([v,c],i) => `<div><b class="${c}">${v}</b><span>${esc(X.prodK[i])}</span></div>`).join("");
+  $("prodHead").innerHTML = X.prodHead.map((h,i) => `<th class="${i && i < 7 ? "num" : ""}">${esc(h)}</th>`).join("");
+  let est = false;
+  $("prodRows").innerHTML = r.wells.map(w => { est = est || !w.measured; return `<tr><td><strong>${esc(w.well)}</strong></td>
+    <td class="num">${num(w.flowing_h,1)}</td><td class="num">${num(w.test_h,1)}</td><td class="num">${num(w.shut_h,1)}</td>
+    <td class="num ${w.no_data_h > 1 ? "warnv" : ""}">${num(w.no_data_h,1)}</td><td class="num">${num(w.oil_m3,1)}${w.measured ? "" : "*"}</td>
+    <td class="num ${w.defer_m3 > 0.05 ? "bad" : ""}">${num(w.defer_m3,1)}</td><td>${esc(Object.keys(w.causes).join("; "))}</td></tr>`; }).join("");
+  $("prodNote").textContent = est ? X.est : "";
+  const mx = Math.max(1, ...r.causes_30d.map(c => c.m3));
+  $("causes").innerHTML = r.causes_30d.length ? r.causes_30d.map(c => `<div style="display:grid;grid-template-columns:minmax(0,1fr) 90px;gap:4px 10px;margin:0 0 8px">
+    <div>${esc(c.cause)} <span class="sub2">(${esc(c.wells.join(", "))})</span><div class="bar" style="width:${(c.m3/mx*100).toFixed(0)}%"></div></div><div class="num">${num(c.m3,1)} m³</div></div>`).join("")
+    : `<p class="empty">–</p>`;
+}
+$("prodDay").addEventListener("change", loadProd);
+// ---- work orders
+async function loadWo(){
+  const X = V(), r = await getj("/api/workorders"), now = lastState ? lastState.now : Date.now()/1000;
+  $("hWo").textContent = X.tabs.wo;
+  $("woSum").innerHTML = Object.entries(X.woSum).map(([k,v]) => `<span class="chip ${k === "overdue" && r.summary[k] ? "bad" : ""}">${r.summary[k]} ${esc(v)}</span>`).join("");
+  const showAll = $("woAll").checked;
+  const rows = r.orders.filter(o => showAll || ["open","acknowledged","reopened","done"].includes(o.status));
+  $("woList").innerHTML = rows.length ? rows.map(o => {
+    const openish = ["open","acknowledged","reopened"].includes(o.status), late = openish && o.due_t < now;
+    const btn = [];
+    if(can("operator") && ["open","reopened"].includes(o.status)) btn.push(`<button type="button" data-wo="ack" data-id="${o.id}">${esc(X.take)}</button>`);
+    if(can("operator") && openish) btn.push(`<input placeholder="${esc(X.notePh)}" id="won${o.id}" style="max-width:260px"><button type="button" class="primary" data-wo="done" data-id="${o.id}">${esc(X.done)}</button>`);
+    if(can("supervisor") && (openish || o.status === "done")) btn.push(`<input placeholder="${esc(X.reasonPh)}" id="wor${o.id}" style="max-width:180px"><button type="button" data-wo="cancel" data-id="${o.id}">${esc(X.cancel)}</button>`);
+    return `<div class="wo" data-p="${o.priority}">
+      <p><strong>#${o.id} ${esc(o.entity)}</strong> · ${esc(o.title)} <span class="status-pill ${o.status === "reopened" ? "bad" : o.status === "verified" ? "okv" : ""}">· ${esc(X.wost[o.status] || o.status)}</span></p>
+      <p class="meta">${esc(X.teams[o.team] || o.team)} · ${esc(X.due)} ${dmy(o.due_t)} ${late ? `<strong class="bad">${X.late}</strong>` : ""} · ${esc(X.src[o.source] || o.source)} · ${dmy(o.created_t)}${o.done_by ? ` · ${esc(X.done)} ${esc(X.by)} ${esc(o.done_by)}` : ""}</p>
+      ${o.detail ? `<p>${esc(o.detail)}</p>` : ""}${o.action ? `<p><strong>→</strong> ${esc(o.action)}</p>` : ""}
+      ${o.result ? `<pre>${esc(o.result.trim())}</pre>` : ""}${o.done_note ? `<pre>${esc(o.done_note)}</pre>` : ""}
+      ${btn.length ? `<div class="ackrow">${btn.join("")}</div>` : ""}</div>`; }).join("") : `<p class="empty">${esc(X.none)}</p>`;
+  const b = document.querySelector('[data-tab="wo"]'); let c = b.querySelector(".cnt");
+  const n = r.summary.overdue + r.summary.reopened;
+  if(n){ if(!c){ c = document.createElement("span"); c.className = "cnt"; b.appendChild(c); } c.textContent = n; } else if(c) c.remove();
+}
+$("woAll").addEventListener("change", loadWo);
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-wo]"); if(!b) return;
+  const id = +b.dataset.id, k = b.dataset.wo; b.disabled = true;
+  try{
+    if(k === "ack") await post("/api/workorders/ack", {id});
+    if(k === "done") await post("/api/workorders/done", {id, note: ($("won"+id) || {}).value || ""});
+    if(k === "cancel") await post("/api/workorders/cancel", {id, reason: ($("wor"+id) || {}).value || ""});
+  }catch(err){ alertBox($("woMsg"), err); }
+  loadWo();
+});
+$("woForm").addEventListener("submit", async e => {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+  try{ await post("/api/workorders/create", f); e.target.reset(); $("woMsg").textContent = V().created; loadWo(); }catch(err){ alertBox($("woMsg"), err); }
+});
+function alertBox(el, err){ el.textContent = `${V().err} : ${err.message || err}`; el.classList.add("bad"); setTimeout(() => el.classList.remove("bad"), 4000); }
+// ---- tests
+async function loadTests(){
+  const X = V(), r = await getj("/api/tests");
+  $("hPlan").textContent = X.plan;
+  $("tRun").innerHTML = r.running.length ? r.running.map(t => `<p><strong>${esc(t.well)}</strong> · ${esc(t.manifold)} · ${dmy(t.start_t)}</p>`).join("") : `<p class="empty">${esc(X.run0)}</p>`;
+  $("tPlanHead").innerHTML = X.tPlanHead.map(h => `<th>${esc(h)}</th>`).join("");
+  $("tPlan").innerHTML = r.schedule.map(s => `<tr><td>${esc(s.date)}</td><td>${esc(s.manifold)}</td><td><strong>${esc(s.well)}</strong></td><td>${esc(s.reason)}</td></tr>`).join("") || `<tr><td colspan="4" class="empty">–</td></tr>`;
+  $("tOver").innerHTML = r.overdue.length ? r.overdue.map(o => `<p><strong>${esc(o.well)}</strong> · ${o.days == null ? esc(X.never) : `${o.days} ${esc(X.days)}`}</p>`).join("") : `<p class="empty">${esc(X.over0)}</p>`;
+  $("tRes").innerHTML = r.recent.filter(t => t.status !== "running").slice(0, 15).map(t => `<div class="wo" data-p="${t.status === "to_validate" ? 2 : 1}">
+    <p><strong>${esc(t.well)}</strong> · ${dmy(t.start_t)} · <span class="status-pill">${esc(X.tStat[t.status] || t.status)}</span>
+    ${t.oil_m3d != null ? ` · ${num(t.oil_m3d,1)} m³/j` : ""}${t.water_m3d != null ? ` · eau ${num(t.water_m3d,1)}` : ""}</p>
+    ${t.verdict ? `<p class="meta">${esc(X.verdict)} : ${esc(t.verdict)}</p>` : ""}${t.checked_by ? `<p class="meta">${esc(X.by)} ${esc(t.checked_by)}</p>` : ""}
+    ${t.status === "to_validate" && can("supervisor") ? `<div class="ackrow"><button type="button" class="primary" data-test="1" data-id="${t.id}">${esc(X.validate)}</button><button type="button" data-test="0" data-id="${t.id}">${esc(X.reject)}</button></div>` : ""}
+    </div>`).join("") || `<p class="empty">–</p>`;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-test]"); if(!b) return; b.disabled = true;
+  try{ await post("/api/tests/check", {id:+b.dataset.id, ok: b.dataset.test === "1"}); }catch(err){ alertBox($("testMsg"), err); }
+  loadTests();
+});
+$("testForm").addEventListener("submit", async e => {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+  for(const k of ["water_m3d","gas_m3d"]) if(f[k] === "") delete f[k];
+  try{ const t = await post("/api/tests/result", f); $("testMsg").textContent = `${V().saved} ${t.verdict || ""}`; e.target.reset(); loadTests(); }catch(err){ alertBox($("testMsg"), err); }
+});
+// ---- logbook
+async function loadLog(){
+  const X = V(), eq = $("logFilter").value;
+  const r = await getj("/api/logbook?days=7" + (eq ? "&equipment=" + encodeURIComponent(eq) : ""));
+  $("hLog").textContent = X.tabs.log;
+  $("logList").innerHTML = r.entries.length ? r.entries.map(x => `<li data-type="${esc(x.kind)}"><time>${dmy(x.t)}</time><span class="t">${esc(X.kinds[x.kind] || x.kind)}</span>
+    ${x.equipment ? `<strong>${esc(x.equipment)}</strong> ` : ""}${x.status ? `<em>${esc(X.stat[x.status] || x.status)}</em> ` : ""}${x.kind === "handover" ? `<div class="pre">${esc(x.text)}</div>` : esc(x.text)}
+    <span class="sub2"> · ${esc(x.author || "-")}</span></li>`).join("") : `<li class="empty">${esc(X.log0)}</li>`;
+}
+$("logFilter").addEventListener("change", loadLog);
+$("logKind").addEventListener("change", e => { $("statusWrap").hidden = e.target.value !== "status"; });
+$("logForm").addEventListener("submit", async e => {
+  e.preventDefault(); const f = Object.fromEntries(new FormData(e.target));
+  if(f.kind !== "status") delete f.status;
+  try{ await post("/api/logbook", f); e.target.querySelector("textarea").value = ""; $("logMsg").textContent = V().saved; loadLog(); refresh(); }catch(err){ alertBox($("logMsg"), err); }
+});
+$("btnHandPrev").addEventListener("click", async () => { const r = await getj("/api/handover"); $("handText").textContent = r.body; });
+// ---- assistant
+let askInit = false;
+function initAsk(){
+  const X = V();
+  $("askMode").textContent = X.mode[ME.assistant] || "";
+  $("askForm").q.placeholder = X.askPh;
+  $("askSug").innerHTML = X.sug.map(q => `<button type="button" class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join("");
+  if(!askInit){ askInit = true; $("chat").innerHTML = `<div class="msg a">${esc(X.ask0)}</div>`; }
+}
+async function ask(q){
+  const c = $("chat");
+  c.insertAdjacentHTML("beforeend", `<div class="msg q">${esc(q)}</div>`);
+  const pending = document.createElement("div"); pending.className = "msg a"; pending.textContent = "…"; c.appendChild(pending); c.scrollTop = c.scrollHeight;
+  try{ const r = await post("/api/ask", {q}); pending.textContent = r.answer || "–"; }catch(err){ pending.textContent = `${V().err} : ${err.message}`; }
+  c.scrollTop = c.scrollHeight;
+}
+$("askForm").addEventListener("submit", e => { e.preventDefault(); const q = e.target.q.value.trim(); if(q){ e.target.q.value = ""; ask(q); } });
+$("askSug").addEventListener("click", e => { const b = e.target.closest("[data-q]"); if(b) ask(b.dataset.q); });
+(async () => {
+  try{ ME = await getj("/api/me"); }catch(e){}
+  let t = "surv"; try{ t = localStorage.getItem("tab") || "surv"; }catch(e){}
+  showTab(t);
+  setInterval(() => { if(TAB !== "surv" && TAB !== "ask") loadTab(); else labels(); }, 15000);
+})();
 </script>
 </body>
 </html>

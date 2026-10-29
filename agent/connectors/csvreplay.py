@@ -51,8 +51,12 @@ class CsvConnector(Connector):
             self.rows = [r for r in rd if r]
         self.col = {h.strip(): i for i, h in enumerate(head)}
         missing = [f"{e}.{s} -> {t}" for e, sigs in self.points().items() for s, t in sigs.items() if t not in self.col]
-        if missing:
+        if missing and not self.c.get("allow_missing"):
             raise ValueError("columns not found in CSV: " + ", ".join(missing[:5]))
+        # allow_missing (backtest): signals absent from the export are simply not read
+        self._pts = {e: {s: t for s, t in sigs.items() if t in self.col} for e, sigs in super().points().items()}
+        if not any(self._pts.values()):
+            raise ValueError("no configured signal found in the CSV header")
         self.i = 0
         self._clock = None
         self._last: dict[str, float] = {}
@@ -76,6 +80,9 @@ class CsvConnector(Connector):
                 self._last[col] = (v, t)
                 res.setdefault(ent, {})[sig] = Sample(v, t, True)
         return res
+
+    def points(self):
+        return getattr(self, "_pts", None) or super().points()
 
     def now(self):
         return self._clock

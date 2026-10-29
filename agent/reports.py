@@ -106,12 +106,12 @@ def llm_summary(cfg, body: str) -> str:
         return ""
 
 
-def weekly_report(engine, store, cfg):
+def weekly_report(engine, store, cfg, interventions=None):
     """Weekly analysis report for the supervisor, and one work list per team.
     Returns (subject, body, {team: (subject, body)})."""
     L = cfg.language
     fr = L == "fr"
-    an = Analyst(cfg, store, engine)
+    an = Analyst(cfg, store, engine, interventions)
     found = an.run()
     end = store.last_day() or datetime.now().date()
     teams_cfg = (cfg.analysis or {}).get("teams", {})
