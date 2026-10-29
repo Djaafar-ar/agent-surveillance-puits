@@ -20,6 +20,27 @@ It is installed on a PC or server on site, connects to the SCADA over **OPC UA**
 - **E-mails** for every emergency and end of alarm, a **daily report** (which also proves the agent is alive) and a **shift handover**.
 - **Alarm KPIs** against EEMUA 191: alarms per 10 min, peaks, floods, time to acknowledge.
 
+### Long-term analysis: months and years, not just minutes
+
+The alarms catch what breaks tonight. Most losses build up slowly, over weeks, and nobody sees them on a screen that shows the last few hours. Every day the agent saves the mean, minimum and maximum of each signal, and every week it studies that history and sends the supervisor a **priority list**: what is changing, when it will become a problem, what to do, and which team should do it.
+
+| What it looks for | How | Proposed action | Team |
+|---|---|---|---|
+| Well declining faster than usual | wellhead pressure slope over 60 days vs the year, compared with the other wells of the same manifold | well test, gas lift or stimulation, with the date the well stops flowing into the manifold | Production |
+| Salt deposits | sudden pressure jumps after each wash, then a slow fall | wash more often, more desalting water | Production |
+| Sudden step with no operation logged | pressure drop of several bar in a day, no shut-in recorded | well test | Production |
+| Choke wearing or plugging over weeks | trend of the pressure drop across the choke | inspect the choke | Production |
+| Transmitter drifting | pressure falls but temperature stays flat | recalibrate before concluding to a decline | Instrumentation |
+| Annulus pressure building up | trend of the daily maximum, date it reaches the threshold | bleed-down / build-up test before that date | Integrity / HSE |
+| RTU battery ageing | night minimum voltage falling week after week | replace the battery before the date | Electrical maintenance |
+| Solar panel dirty or failing | daily peak charging current falling | clean or check the panel | Electrical maintenance |
+| Unreliable RTU or repeater | availability below 97 %, repeated link losses | radio survey, antenna, repeater | Telecom |
+| Bad actors | same alarm coming back again and again | find the root cause, review the threshold | per alarm |
+
+The report goes to the supervisor (`email.report_to`). With `analysis.dispatch_to_teams: true` each team also receives its own list; by default the supervisor decides who acts. **The agent proposes, the team decides**: these are estimates from trends, to be checked on site.
+
+![Long-term analysis on the dashboard](docs/img/agent-analyse.png)
+
 ## Safety by design
 
 1. **Read-only.** Only OPC UA reads and Modbus read function codes (1–4). The code contains no write call, and a test fails if one is ever added.
@@ -87,6 +108,7 @@ The simulator plays the role of the SCADA: the agent connects to it over OPC UA 
 
 ```bash
 pip install -r requirements.txt
+python -m simulator.history --config config/config.sim.yaml --days 365   # a simulated year of history
 python -m simulator.sim_server --speed 30 --scenario demo --night   # terminal 1
 python -m agent run --config config/config.sim.yaml                 # terminal 2
 ```
@@ -105,11 +127,11 @@ A browser-only version of the demo, with no installation, is available online: *
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # engine and end-to-end: 98 tests, about 3 minutes
+python -m pytest tests          # engine and end-to-end: 115 tests, about 3 minutes
 python tests/test_demo_page.py  # browser demo (needs: python -m playwright install chromium)
 ```
 
-They check zero false alarms over 24 h of normal operation (several random seeds, including with the most sensitive thresholds), detection and grouping of every incident, escalation timing, SMS and dashboard acknowledgement, recovery after a shut-in, loss of the SCADA link, the OPC UA, Modbus and CSV connectors, the dashboard security, and that no connector can write.
+They check that the long-term analysis finds every problem planted in a simulated year (and nothing on the healthy wells), zero false alarms over 24 h of normal operation (several random seeds, including with the most sensitive thresholds), detection and grouping of every incident, escalation timing, SMS and dashboard acknowledgement, recovery after a shut-in, loss of the SCADA link, the OPC UA, Modbus and CSV connectors, the dashboard security, and that no connector can write.
 
 ## Limitations
 
@@ -122,7 +144,7 @@ They check zero false alarms over 24 h of normal operation (several random seeds
 
 1. 3-month pilot on 5 wells, read-only, in parallel with the current system; measure false and missed alarms.
 2. Threshold tuning per well from the pilot data and CSV replays.
-3. Long-term decline analysis on a full year of history (already computed from the daily averages after 21 days).
+3. Check the long-term analysis on a real year of historian data (CSV export) before trusting its dates.
 4. English interface for the online demo.
 
 ## References

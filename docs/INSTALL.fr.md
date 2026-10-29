@@ -91,6 +91,14 @@ Pendant au moins un mois, l'agent tourne **en parallèle** du système actuel :
 
 Si le rapport journalier n'arrive pas à l'heure prévue, l'agent est arrêté : c'est le signal de vie à surveiller.
 
+## 7. Rapport hebdomadaire et équipes
+
+L'agent garde chaque jour la moyenne, le minimum et le maximum de chaque signal. Après 21 jours d'historique, il commence l'analyse long terme ; elle devient fiable après plusieurs mois. Le rapport hebdomadaire part au superviseur (`email.report_to`), le jour et l'heure fixés dans le bloc `analysis:` de `config.yaml`.
+
+Pour que chaque équipe reçoive aussi sa propre liste de travail, renseigner ses adresses dans `analysis.teams` et mettre `dispatch_to_teams: true`. Les équipes possibles sont `production`, `instrumentation`, `telecom`, `maintenance` et `hse`.
+
+On peut envoyer le rapport à la main depuis le tableau de bord (bouton « Rapport hebdomadaire »). Si l'agent est installé sur un site qui a déjà un historique, on peut aussi rejouer un export CSV de l'historien pour remplir les premiers mois.
+
 ## Dépannage
 
 | Symptôme | Cause probable |

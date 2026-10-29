@@ -72,6 +72,20 @@ email:
   alarm_to: ["salle.controle@exemple.dz"]
   report_to: ["ingenieur.production@exemple.dz"]
 
+# Long-term analysis: weekly report to the supervisor (email.report_to), with a
+# priority list. Each item names the team that should act. If dispatch_to_teams
+# is true, each team also receives its own work list (otherwise the supervisor decides).
+analysis:
+  weekly_report_day: 6        # 0 = Monday ... 6 = Sunday
+  weekly_report_hour: 8
+  dispatch_to_teams: false
+  teams:
+    production: ["ingenieur.production@exemple.dz"]
+    instrumentation: ["instrumentation@exemple.dz"]
+    telecom: ["telecom@exemple.dz"]
+    maintenance: ["maintenance.electrique@exemple.dz"]
+    hse: ["hse@exemple.dz"]
+
 web:
   host: 127.0.0.1
   port: 8080

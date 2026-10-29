@@ -41,9 +41,33 @@ class App:
         return s
 
     def send_report(self, kind="daily"):
+        if kind == "weekly":
+            return self.send_weekly()
         subj, body = reports.daily_report(self.engine, self.store, self.cfg, 24 if kind == "daily" else 8)
         self.out.email(self.cfg.email.get("report_to", []), subj, body)
         self.out.journal("info", None, subj)
+
+    def send_weekly(self):
+        """Weekly analysis to the supervisor; work lists to each team if enabled."""
+        subj, body, per_team, found = reports.weekly_report(self.engine, self.store, self.cfg)
+        self.out.email(self.cfg.email.get("report_to", []), subj, body)
+        self.out.journal("info", None, subj)
+        a = self.cfg.analysis
+        if a.get("dispatch_to_teams"):
+            for team, (ts, tb) in per_team.items():
+                to = a.get("teams", {}).get(team, [])
+                if to:
+                    self.out.email(to, ts, tb)
+                    self.out.journal("info", None, ts)
+        self._analysis_cache = (time.time(), found)
+        return found
+
+    def analysis(self, max_age=600):
+        cache = getattr(self, "_analysis_cache", None)
+        if cache is None or time.time() - cache[0] > max_age:
+            from .analysis import Analyst
+            self._analysis_cache = (time.time(), Analyst(self.cfg, self.store, self.engine).run())
+        return [f.to_dict(self.cfg.language) for f in self._analysis_cache[1]]
 
     def cycle(self):
         readings = self.conn.read()
@@ -52,16 +76,47 @@ class App:
     def process(self, now, readings):
         self.engine.step(now, readings, bool(readings), self.conn.last_error)
         self.cycles += 1
-        for w in self.engine.wells.values():
-            if w.fresh:
-                self.store.accumulate(now, w.id, w.cur.get("whp") if not w.whp_bad else None, w.cur.get("wht"),
-                                      bool(w.cur.get("sdv_closed")))
+        self.record_daily(now)
         d = datetime.fromtimestamp(now)
+        a = self.cfg.analysis
+        if (d.weekday() == int(a["weekly_report_day"]) and d.hour == int(a["weekly_report_hour"])
+                and getattr(self, "last_weekly", None) != d.date() and self.cycles > 1):
+            self.last_weekly = d.date()
+            try:
+                self.send_weekly()
+            except Exception:  # noqa: BLE001
+                log.exception("weekly report failed")
         if d.hour == self.cfg.daily_report_hour and self.last_report_day != d.date():
             if self.last_report_day is not None or self.cycles > 1:
                 self.send_report("daily")
             self.last_report_day = d.date()
         return now
+
+    DAILY_WELL = ("whp", "wht", "line_p", "arrival_p", "ann", "ann_7", "oil_rate", "gl_flow", "gl_setpoint", "gl_valve_pos",
+                  "water_flow", "battery", "solar_current", "cabinet_temp", "dp_choke", "dp_line")
+
+    def record_daily(self, now):
+        """Daily min / mean / max of every signal, for the long-term analysis."""
+        smin = self.cfg.thresholds["sensor_min_barg"]
+        with self.engine.lock:
+            for w in self.engine.wells.values():
+                vals = {"online": 1.0 if w.fresh else 0.0}
+                if w.fresh:
+                    for s_ in self.DAILY_WELL:
+                        v = w.cur.get(s_)
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            if s_ in ("whp", "line_p", "arrival_p", "ann", "ann_7") and (v < smin or (s_ == "whp" and w.whp_bad)):
+                                continue    # failed transmitter: keep it out of the history
+                            vals[s_] = v
+                    vals["shut"] = 1.0 if w.cur.get("sdv_closed") else 0.0
+                    vals["test"] = 1.0 if w.cur.get("on_test") else 0.0
+                d = w.defer_m3 - getattr(w, "_defer_rec", 0.0)
+                w._defer_rec = w.defer_m3
+                vals["defer_m3"] = d
+                self.store.accumulate(now, w.id, vals)
+            for m in self.engine.mans.values():
+                if m.fresh:
+                    self.store.accumulate(now, m.id, {k: v for k, v in m.cur.items() if isinstance(v, (int, float))})
 
     def run(self, web=True):
         if web:
@@ -112,4 +167,5 @@ class App:
             except Exception:  # noqa: BLE001  - never let one bad cycle stop the surveillance
                 log.exception("cycle failed")
             self.stop.wait(max(1.0, self.cfg.poll_seconds - (time.time() - t0)))
+        self.store.flush_all()      # keep today's partial daily history
         self.conn.close()

@@ -34,6 +34,12 @@ h2 small{font-weight:400;color:var(--muted)}
 .alarm .head{font-weight:700}
 .alarm .act{font-weight:600}
 .alarm .meta{color:var(--muted);font-size:.86rem}
+.find{display:grid;grid-template-columns:110px 1fr;gap:4px 14px;padding:10px 0;border-bottom:1px solid var(--line)}
+.find:last-child{border-bottom:0}
+.find .tag{font-size:.78rem;font-weight:700;letter-spacing:.03em}
+.find .tag.s3{color:var(--bad)} .find .tag.s2{color:var(--warn)} .find .tag.s1{color:var(--muted)}
+.find p{margin:2px 0}
+.find .who{color:var(--muted);font-size:.84rem}
 .ackrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
 button,select{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 10px;border-radius:6px;cursor:pointer}
 button.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)}
@@ -83,6 +89,10 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
       <div id="active"></div>
     </section>
     <section>
+      <h2><span id="hAna">Analyse long terme : priorités</span><small id="anaSum"></small></h2>
+      <div id="ana"></div>
+    </section>
+    <section>
       <h2><span id="hWells">Puits surveillés</span><small id="wellSum"></small></h2>
       <div class="wrap"><table>
         <thead><tr id="wellHead"></tr></thead>
@@ -96,6 +106,7 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
       <div class="ackrow">
         <button type="button" id="btnDaily">Envoyer le rapport journalier</button>
         <button type="button" id="btnHand">Relève de quart</button>
+        <button type="button" id="btnWeek">Rapport hebdomadaire</button>
       </div>
       <p class="empty" id="repStatus" role="status"></p>
     </section>
@@ -115,7 +126,8 @@ footer{color:var(--muted);font-size:.85rem;text-align:center;margin-top:10px}
 "use strict";
 const TXT = {
   fr:{title:"Agent de surveillance des puits", active:"Alarmes en cours", wells:"Puits surveillés", actions:"Rapports", journal:"Journal de l'agent", msgs:"Messages envoyés",
-      daily:"Envoyer le rapport journalier", hand:"Relève de quart", sent:"Rapport envoyé.", none:"Aucune alarme en cours.",
+      daily:"Envoyer le rapport journalier", hand:"Relève de quart", week:"Rapport hebdomadaire", ana:"Analyse long terme : priorités",
+      anaNone:"Rien à signaler, ou moins de 21 jours d'historique.", due:"échéance", action:"Action", team:"Équipe", sent:"Rapport envoyé.", none:"Aucune alarme en cours.",
       linkOk:"SCADA : lecture OK", linkBad:"Liaison SCADA perdue", since:"depuis", grouped:"alarme(s) regroupée(s)", ackBy:"Acquitter au nom de",
       acked:"Acquittée par", notified:"SMS envoyés à", urg:"Urgence", avert:"Avertissement",
       head:["Puits","Pression tête","Tendance 90 min","P. ligne","Huile","Annulaire","Injection","RTU","État"],
@@ -124,7 +136,8 @@ const TXT = {
       foot:"Lecture seule : l'agent n'envoie aucune commande au SCADA. Les alarmes et les systèmes de sécurité du SCADA restent la référence.",
       sum:(n,u,a)=>`${n} normaux, ${u} en urgence, ${a} en avertissement`},
   en:{title:"Well surveillance agent", active:"Active alarms", wells:"Monitored wells", actions:"Reports", journal:"Agent log", msgs:"Messages sent",
-      daily:"Send the daily report", hand:"Shift handover", sent:"Report sent.", none:"No active alarm.",
+      daily:"Send the daily report", hand:"Shift handover", week:"Weekly report", ana:"Long-term analysis: priorities",
+      anaNone:"Nothing to report, or less than 21 days of history.", due:"deadline", action:"Action", team:"Team", sent:"Report sent.", none:"No active alarm.",
       linkOk:"SCADA: reading OK", linkBad:"SCADA link lost", since:"since", grouped:"grouped alarm(s)", ackBy:"Acknowledge as",
       acked:"Acknowledged by", notified:"SMS sent to", urg:"Emergency", avert:"Warning",
       head:["Well","Wellhead pressure","90 min trend","Line pressure","Oil","Annulus","Injection","RTU","State"],
@@ -161,7 +174,7 @@ function render(s){
   const lk = $("link"); lk.textContent = s.link.ok ? L.linkOk : `${L.linkBad}${s.link.error ? " : " + s.link.error : ""}`;
   lk.className = "badge " + (s.link.ok ? "ok" : "bad");
   $("hActive").textContent = L.active; $("hWells").textContent = L.wells; $("hActions").textContent = L.actions;
-  $("hJournal").textContent = L.journal; $("hMsg").textContent = L.msgs; $("btnDaily").textContent = L.daily; $("btnHand").textContent = L.hand;
+  $("hJournal").textContent = L.journal; $("hAna").textContent = L.ana; $("btnWeek").textContent = L.week; $("hMsg").textContent = L.msgs; $("btnDaily").textContent = L.daily; $("btnHand").textContent = L.hand;
   $("foot").textContent = L.foot;
   const nal = s.wells.filter(w => w.alarms.length).length, P = s.perf;
   const acks = P.ack_avg_min == null ? "–" : Math.round(P.ack_avg_min) + " min";
@@ -213,6 +226,19 @@ document.addEventListener("click", async e => {
 });
 $("btnDaily").addEventListener("click", async () => { await post("/api/report", {kind:"daily"}); $("repStatus").textContent = L.sent; });
 $("btnHand").addEventListener("click", async () => { await post("/api/report", {kind:"handover"}); $("repStatus").textContent = L.sent; });
+$("btnWeek").addEventListener("click", async () => { await post("/api/report", {kind:"weekly"}); $("repStatus").textContent = L.sent; });
+async function refreshAnalysis(){
+  try{
+    const r = await fetch("/api/analysis", {cache:"no-store"}); if(!r.ok) return;
+    const f = (await r.json()).findings;
+    $("anaSum").textContent = f.length ? String(f.length) : "";
+    $("ana").innerHTML = f.length ? f.slice(0, 12).map(x => `<div class="find"><span class="tag s${x.severity}">${esc(x.severity_label)}</span>
+      <div><p><strong>${esc(x.entity)}</strong> · ${esc(x.title)}${x.due_date ? ` · ${L.due} ${esc(x.due_date.split("-").reverse().join("/"))}` : ""}</p>
+      <p>${esc(x.evidence)}</p><p><strong>${L.action} :</strong> ${esc(x.action)}</p><p class="who">${L.team} : ${esc(x.team_label)}</p></div></div>`).join("")
+      : `<p class="empty">${L.anaNone}</p>`;
+  }catch(e){}
+}
+refreshAnalysis(); setInterval(refreshAnalysis, 60000);
 async function refresh(){
   try{ const r = await fetch("/api/state", {cache:"no-store"}); if(r.ok) render(await r.json()); }
   catch(e){ const lk = $("link"); lk.textContent = "Agent injoignable / agent unreachable"; lk.className = "badge bad"; }

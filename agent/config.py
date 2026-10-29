@@ -160,6 +160,7 @@ class Config:
     wells: list[Well]
     oil_price_usd: float = 70.0
     satellites: dict = field(default_factory=dict)    # id -> zone
+    analysis: dict = field(default_factory=dict)
 
     @property
     def samples_per_minute(self) -> float:
@@ -188,6 +189,18 @@ def _format_nested(t: Any, entity_id: str) -> Any:
     if isinstance(t, str):
         return t.format(id=entity_id)
     return t
+
+
+def _analysis(a: dict) -> dict:
+    out = {"weekly_report_day": 6, "weekly_report_hour": 8, "dispatch_to_teams": False, "teams": {}}
+    out.update(a)
+    from .analysis import TEAMS
+    for t in out["teams"]:
+        if t not in TEAMS:
+            raise ConfigError(f"analysis.teams: unknown team '{t}'. Known: {', '.join(TEAMS)}")
+    if not 0 <= int(out["weekly_report_day"]) <= 6:
+        raise ConfigError("analysis.weekly_report_day: 0 (Monday) to 6 (Sunday)")
+    return out
 
 
 def load(path: str) -> Config:
@@ -278,4 +291,5 @@ def load(path: str) -> Config:
         learn_minutes=int(raw.get("learn_minutes", 120)), baseline_hours=int(raw.get("baseline_hours", 12)),
         roster=roster, sms=raw.get("sms") or {"type": "console"}, email=raw.get("email") or {"type": "console"},
         web=web, storage=storage, llm=raw.get("llm") or {"enabled": False},
-        manifolds=manifolds, wells=wells, oil_price_usd=float(raw.get("oil_price_usd", 70)), satellites=sats)
+        manifolds=manifolds, wells=wells, oil_price_usd=float(raw.get("oil_price_usd", 70)), satellites=sats,
+        analysis=_analysis(raw.get("analysis") or {}))

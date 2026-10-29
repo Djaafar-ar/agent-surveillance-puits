@@ -3,7 +3,8 @@
 GET  /                 dashboard
 GET  /api/state        current state (wells, alarms, journal, messages, KPIs)
 POST /api/ack          {"alarm_id": 12, "idx": 0}  acknowledge from the dashboard
-POST /api/report       {"kind": "daily" | "handover"}  send a report now
+POST /api/report       {"kind": "daily" | "handover" | "weekly"}  send a report now
+GET  /api/analysis     long-term analysis: prioritised findings
 POST /api/sms-in       incoming SMS webhook (Android SMS Gateway): "OK" acknowledges
 
 The dashboard listens on 127.0.0.1 by default. To open it to the control-room
@@ -88,6 +89,8 @@ def serve(app):
                 self.wfile.write(data)
             elif self.path == "/api/state":
                 self._json(200, app.snapshot())
+            elif self.path == "/api/analysis":
+                self._json(200, {"findings": app.analysis()})
             else:
                 self._json(404, {"error": "not found"})
 

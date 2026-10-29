@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS alarms (id INTEGER, run TEXT, entity TEXT, kind TEXT,
   ack_t REAL, ack_via TEXT, level INTEGER, notified TEXT, PRIMARY KEY (run, id));
 CREATE TABLE IF NOT EXISTS journal (t REAL, type TEXT, label TEXT, text TEXT);
 CREATE TABLE IF NOT EXISTS messages (t REAL, channel TEXT, recipient TEXT, subject TEXT, body TEXT, status TEXT, error TEXT);
-CREATE TABLE IF NOT EXISTS daily (day TEXT, well TEXT, whp REAL, wht REAL, n INTEGER, shut INTEGER, PRIMARY KEY (day, well));
+CREATE TABLE IF NOT EXISTS daily_sig (day TEXT, entity TEXT, signal TEXT, mean REAL, min REAL, max REAL, n INTEGER, total REAL,
+  PRIMARY KEY (day, entity, signal));
+CREATE INDEX IF NOT EXISTS daily_sig_e ON daily_sig (entity, signal, day);
 CREATE INDEX IF NOT EXISTS journal_t ON journal (t);
 """
 
@@ -57,30 +59,78 @@ class Store:
             return [dict(zip(("t", "channel", "recipient", "subject", "status", "error"), r)) for r in
                     self.db.execute("SELECT t,channel,recipient,subject,status,error FROM messages ORDER BY rowid DESC LIMIT ?", (n,))]
 
-    # ---- daily averages for the decline analysis --------------------------
-    def accumulate(self, t: float, well: str, whp, wht, shut: bool):
+    # ---- daily history (one row per day, entity and signal) -------------------
+    # This is what the long-term analysis works on: months or years of history
+    # take a few thousand rows per well, not millions of raw samples.
+    def accumulate(self, t: float, entity: str, values: dict):
         day = datetime.fromtimestamp(t).strftime("%Y-%m-%d")
-        k = (day, well)
-        a = self._acc.setdefault(k, [0.0, 0.0, 0, 0, 0])
-        if whp is not None and not shut:
-            a[0] += whp
-            a[2] += 1
-            if wht is not None:
-                a[1] += wht
-                a[4] += 1
-        if shut:
-            a[3] = 1
-        # flush days that are over
-        for (d, w) in [x for x in self._acc if x[0] != day]:
-            self._flush(d, w)
+        for sig, v in values.items():
+            if v is None or isinstance(v, str):
+                continue
+            v = float(v)
+            if v != v:          # NaN
+                continue
+            a = self._acc.get((day, entity, sig))
+            if a is None:
+                self._acc[(day, entity, sig)] = [v, v, v, 1]
+            else:
+                a[0] += v
+                a[1] = min(a[1], v)
+                a[2] = max(a[2], v)
+                a[3] += 1
+        old = [k for k in self._acc if k[0] != day]
+        if old:
+            self._flush(old)
 
-    def _flush(self, d, w):
-        a = self._acc.pop((d, w))
-        if a[2]:
-            self._x("INSERT OR REPLACE INTO daily VALUES (?,?,?,?,?,?)",
-                    (d, w, a[0] / a[2], a[1] / a[4] if a[4] else None, a[2], a[3]))
+    def flush_all(self):
+        self._flush(list(self._acc))
 
-    def daily(self, well: str, days: int = 400):
+    def _flush(self, keys):
+        rows = []
+        for k in keys:
+            a = self._acc.pop(k)
+            rows.append((k[0], k[1], k[2], a[0] / a[3], a[1], a[2], a[3], a[0]))
+        self.put_daily(rows, merge=True)
+
+    def put_daily(self, rows, merge=False):
+        """rows: (day, entity, signal, mean, min, max, n, total).
+        merge=True adds to a row already saved for that day (agent restarted during the day)."""
         with self.lock:
-            return list(self.db.execute("SELECT day, whp, wht, n, shut FROM daily WHERE well=? ORDER BY day DESC LIMIT ?",
-                                        (well, days)))[::-1]
+            if merge:
+                out = []
+                for d, e, sg, mean, mn, mx, n, tot in rows:
+                    old = self.db.execute("SELECT mean, min, max, n, total FROM daily_sig WHERE day=? AND entity=? AND signal=?",
+                                          (d, e, sg)).fetchone()
+                    if old and old[3]:
+                        m0, mn0, mx0, n0, t0 = old
+                        mean = (m0 * n0 + mean * n) / (n0 + n)
+                        mn, mx, n, tot = min(mn, mn0), max(mx, mx0), n + n0, (tot or 0) + (t0 or 0)
+                    out.append((d, e, sg, mean, mn, mx, n, tot))
+                rows = out
+            self.db.executemany("INSERT OR REPLACE INTO daily_sig VALUES (?,?,?,?,?,?,?,?)", rows)
+            self.db.commit()
+
+    def series(self, entity: str, signal: str, days: int = 400, stat: str = "mean", full_days=False):
+        """[(date, value)] for the last `days` days with data, oldest first.
+        full_days=True drops days with less than half the usual number of readings
+        (agent stopped part of the day), which would distort daily min/max trends."""
+        col = {"mean": "mean", "min": "min", "max": "max", "total": "total", "n": "n"}[stat]
+        with self.lock:
+            rows = list(self.db.execute(f"SELECT day, {col}, n FROM daily_sig WHERE entity=? AND signal=? ORDER BY day DESC LIMIT ?",
+                                        (entity, signal, days)))
+        if full_days and rows:
+            ns = sorted(r[2] or 0 for r in rows)
+            typ = ns[len(ns) // 2]
+            rows = [r for r in rows if (r[2] or 0) >= 0.5 * typ]
+        return [(datetime.strptime(d, "%Y-%m-%d").date(), v) for d, v, _ in rows[::-1]]
+
+    def last_day(self):
+        with self.lock:
+            r = self.db.execute("SELECT MAX(day) FROM daily_sig").fetchone()
+        return datetime.strptime(r[0], "%Y-%m-%d").date() if r and r[0] else None
+
+    def alarm_history(self, since: float):
+        """Alarms of every run since a timestamp: (entity, code, severity, t0, t_end, parent, ack_t, title)."""
+        with self.lock:
+            return list(self.db.execute("SELECT entity, code, severity, t0, t_end, parent, ack_t, title FROM alarms WHERE t0 >= ? ORDER BY t0",
+                                        (since,)))

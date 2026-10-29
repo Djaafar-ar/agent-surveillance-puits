@@ -20,6 +20,27 @@ Il s'installe sur un PC ou un serveur du site, se connecte au SCADA en **OPC UA*
 - **E-mails** pour chaque urgence et chaque fin d'alarme, **rapport journalier** (qui prouve aussi que l'agent tourne) et **relève de quart**.
 - **Indicateurs d'alarmes** comparés à EEMUA 191 : alarmes par 10 min, pics, inondations, délai d'acquittement.
 
+### Analyse long terme : les mois et les années, pas seulement les minutes
+
+Les alarmes attrapent ce qui casse cette nuit. Mais beaucoup de pertes s'installent lentement, sur des semaines, et personne ne les voit sur un écran qui montre les dernières heures. Chaque jour l'agent garde la moyenne, le minimum et le maximum de chaque signal ; chaque semaine il étudie cet historique et envoie au superviseur une **liste de priorités** : ce qui change, quand cela deviendra un problème, quoi faire et quelle équipe doit agir.
+
+| Ce qu'il cherche | Comment | Action proposée | Équipe |
+|---|---|---|---|
+| Puits qui décline plus vite que d'habitude | pente de la pression tête sur 60 jours comparée à l'année et aux autres puits du manifold | essai de puits, gas lift ou stimulation, avec la date où le puits ne débitera plus dans le manifold | Production |
+| Dépôts de sel | remontées brutales après chaque lavage, puis baisse lente | rapprocher les lavages, plus d'eau de dessalage | Production |
+| Chute brutale sans opération enregistrée | plusieurs bar perdus en un jour, sans fermeture | essai de puits | Production |
+| Duse qui s'use ou se bouche sur des semaines | tendance de la perte de charge à travers la duse | inspecter la duse | Production |
+| Transmetteur qui dérive | la pression baisse mais la température reste stable | réétalonner avant de conclure à un déclin | Instrumentation |
+| Pression annulaire qui monte | tendance du maximum journalier, date d'atteinte du seuil | test de purge et remontée avant cette date | Intégrité / HSE |
+| Batterie de RTU en fin de vie | tension minimale de nuit qui baisse semaine après semaine | remplacer avant la date | Maintenance électrique |
+| Panneau solaire sale ou en défaut | courant de charge maximal qui baisse | nettoyer ou vérifier le panneau | Maintenance électrique |
+| RTU ou répéteur peu fiable | disponibilité sous 97 %, pertes de liaison répétées | contrôle radio, antenne, répéteur | Télécom |
+| Alarmes à répétition | la même alarme revient sans cesse | chercher la cause, revoir le seuil | selon l'alarme |
+
+Le rapport part au superviseur (`email.report_to`). Avec `analysis.dispatch_to_teams: true`, chaque équipe reçoit aussi sa propre liste ; par défaut c'est le superviseur qui décide. **L'agent propose, l'équipe décide** : ce sont des estimations à partir de tendances, à vérifier sur le terrain.
+
+![Analyse long terme sur le tableau de bord](docs/img/agent-analyse.png)
+
 ## Sûreté par conception
 
 1. **Lecture seule.** Uniquement des lectures OPC UA et les codes fonction Modbus de lecture (1 à 4). Le code ne contient aucun appel d'écriture, et un test échoue si quelqu'un en ajoute un.
@@ -40,6 +61,7 @@ Le simulateur joue le rôle du SCADA : l'agent s'y connecte en OPC UA exactement
 
 ```bash
 pip install -r requirements.txt
+python -m simulator.history --config config/config.sim.yaml --days 365   # une année d'historique simulée
 python -m simulator.sim_server --speed 30 --scenario demo --night   # terminal 1
 python -m agent run --config config/config.sim.yaml                 # terminal 2
 ```
@@ -54,7 +76,7 @@ Une version de la démo qui tourne dans le navigateur, sans installation : **[dj
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # moteur et bout en bout : 98 tests, environ 3 minutes
+python -m pytest tests          # moteur et bout en bout : 115 tests, environ 3 minutes
 python tests/test_demo_page.py  # démo navigateur
 ```
 

@@ -9,55 +9,13 @@ from __future__ import annotations
 import json
 import logging
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from .analysis import SEV_LAB, TEAM_LAB, TEAMS, Analyst
 from .config import secret
 from .engine import mean
 
 log = logging.getLogger("agent.reports")
-
-
-def _linreg(xs, ys):
-    mx, my = mean(xs), mean(ys)
-    den = sum((x - mx) ** 2 for x in xs)
-    s = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den if den else 0.0
-    return s
-
-
-def decline(store, well) -> dict | None:
-    """Slopes in bar per month over 30 and 60 days, from daily averages,
-    excluding days with a shut-in. Needs at least 21 days of history."""
-    rows = [r for r in store.daily(well, 400) if not r[4] and r[1] is not None]
-    if len(rows) < 21:
-        return None
-    days = [datetime.strptime(r[0], "%Y-%m-%d").toordinal() for r in rows]
-    out = {"n_days": len(rows), "p_now": mean(r[1] for r in rows[-5:])}
-    for win in (30, 60):
-        sel = [(d, r) for d, r in zip(days, rows) if d >= days[-1] - win]
-        if len(sel) >= 10:
-            out[f"s{win}"] = _linreg([d for d, _ in sel], [r[1] for _, r in sel]) * 30.4
-            ts = [(d, r[2]) for d, r in sel if r[2] is not None]
-            out[f"t{win}"] = _linreg([d for d, _ in ts], [t for _, t in ts]) * 30.4 if len(ts) >= 10 else None
-    s60, t60 = out.get("s60"), out.get("t60")
-    if s60 is None:
-        out["cls"] = "?"
-    elif s60 < -0.8 and t60 is not None and abs(t60) < 0.12:
-        out["cls"] = "sensor_drift"
-    elif s60 < -1.5:
-        out["cls"] = "fast"
-    elif s60 < -0.6:
-        out["cls"] = "marked"
-    elif s60 < -0.15:
-        out["cls"] = "slow"
-    else:
-        out["cls"] = "stable"
-    return out
-
-
-CLS = {"fr": {"sensor_drift": "dérive capteur probable (pression en baisse, température stable)", "fast": "déclin rapide",
-              "marked": "déclin marqué", "slow": "déclin lent", "stable": "stable", "?": "historique insuffisant"},
-       "en": {"sensor_drift": "probable sensor drift (pressure falling, temperature flat)", "fast": "fast decline",
-              "marked": "marked decline", "slow": "slow decline", "stable": "stable", "?": "not enough history"}}
 
 
 def daily_report(engine, store, cfg, hours=24) -> tuple[str, str]:
@@ -99,14 +57,12 @@ def daily_report(engine, store, cfg, hours=24) -> tuple[str, str]:
     lines += ["", "Actions recommandées" if fr else "Recommended actions"]
     acts = [f"- {a.entity} : {a.action}" for a in roots if a.t_end is None]
     lines += acts or ["-"]
-    lines += ["", "Tendances long terme (60 jours)" if fr else "Long-term trends (60 days)"]
-    for w in wells:
-        r = decline(store, w.id) if store else None
-        if r:
-            s = f"{r['s60']:+.1f} bar/{'mois' if fr else 'month'}" if r.get("s60") is not None else ""
-            lines.append(f"- {w.id} : {CLS[L][r['cls']]} {s}")
-    if lines[-1].startswith("Tendances") or lines[-1].startswith("Long-term"):
-        lines.append("Historique de moins de 21 jours : analyse disponible plus tard." if fr else "Less than 21 days of history: analysis available later.")
+    lines += ["", "Analyse long terme : priorités" if fr else "Long-term analysis: priorities"]
+    found = Analyst(cfg, store, engine).run() if store else []
+    for f_ in found[:5]:
+        lines.append(f"- [{SEV_LAB[L][f_.severity]}] {f_.entity} : {f_.title}. {f_.action}")
+    if not found:
+        lines.append("Rien à signaler, ou moins de 21 jours d'historique." if fr else "Nothing to report, or less than 21 days of history.")
     lines += ["", "État par puits" if fr else "Well status"]
     for w in wells:
         stt = ", ".join(a.title for a in w.alarms.values()) or ("normal")
@@ -148,3 +104,81 @@ def llm_summary(cfg, body: str) -> str:
     except Exception as e:  # noqa: BLE001
         log.warning("LLM summary skipped: %s", e)
         return ""
+
+
+def weekly_report(engine, store, cfg):
+    """Weekly analysis report for the supervisor, and one work list per team.
+    Returns (subject, body, {team: (subject, body)})."""
+    L = cfg.language
+    fr = L == "fr"
+    an = Analyst(cfg, store, engine)
+    found = an.run()
+    end = store.last_day() or datetime.now().date()
+    teams_cfg = (cfg.analysis or {}).get("teams", {})
+    lines = []
+    lines += [f"{'Site' if fr else 'Site'} : {cfg.site_name}",
+              (f"Analyse de l'historique jusqu'au {end:%d/%m/%Y}." if fr else f"Analysis of the history up to {end:%d/%m/%Y}."), ""]
+    urgent = [f for f in found if f.severity == 3]
+    lines.append(("Résumé : " if fr else "Summary: ") + (
+        f"{len(found)} point(s), dont {len(urgent)} urgent(s)." if fr else f"{len(found)} item(s), {len(urgent)} urgent."))
+    lines += ["", "Priorités" if fr else "Priorities"]
+    if not found:
+        lines.append("Rien à signaler." if fr else "Nothing to report.")
+    for i, f_ in enumerate(found[:12], 1):
+        due = ""
+        if f_.due_days is not None:
+            due = (f" — échéance estimée : {(end + timedelta(days=f_.due_days)):%d/%m/%Y}" if fr
+                   else f" — estimated deadline: {(end + timedelta(days=f_.due_days)):%d/%m/%Y}")
+        dest = ", ".join(teams_cfg.get(f_.team, [])) or "-"
+        lines += [f"{i}. [{SEV_LAB[L][f_.severity]}] {f_.entity} — {f_.title}{due}",
+                  f"   {'Constat' if fr else 'Evidence'} : {f_.evidence}",
+                  f"   {'Action proposée' if fr else 'Proposed action'} : {f_.action}",
+                  f"   {'Équipe' if fr else 'Team'} : {TEAM_LAB[L][f_.team]} ({dest})", ""]
+    # per team
+    per_team = {}
+    lines += ["Par équipe" if fr else "By team"]
+    for t in TEAMS:
+        items = [f for f in found if f.team == t]
+        if not items:
+            continue
+        lines.append(f"- {TEAM_LAB[L][t]} : " + "; ".join(f"{f.entity} ({f.title.lower()})" for f in items))
+        body = [(f"Liste de travail proposée par l'agent de surveillance pour l'équipe {TEAM_LAB[L][t]}, {cfg.site_name}." if fr
+                 else f"Work list proposed by the surveillance agent for the {TEAM_LAB[L][t]} team, {cfg.site_name}."), ""]
+        for f_ in items:
+            body += [f"- {f_.entity} : {f_.title}", f"  {f_.evidence}", f"  {'Action' if fr else 'Action'} : {f_.action}", ""]
+        body.append("Proposition automatique à valider par le superviseur." if fr else "Automatic proposal, to be validated by the supervisor.")
+        per_team[t] = ((f"[Agent] Travaux proposés {TEAM_LAB[L][t]} — {cfg.site_name}" if fr
+                        else f"[Agent] Proposed work {TEAM_LAB[L][t]} — {cfg.site_name}"), "\n".join(body))
+    # alarm system over 7 days
+    since = (datetime.combine(end - timedelta(days=7), datetime.min.time())).timestamp()
+    hist = store.alarm_history(since)
+    roots = [h for h in hist if h[5] is None]
+    lines += ["", "Système d'alarmes (7 jours)" if fr else "Alarm system (7 days)",
+              (f"{len(roots)} alarme(s) présentée(s) pour {len(hist)} détection(s), soit {len(roots) / (7 * 144):.2f} par 10 min (cible EEMUA 191 : moins de 1)."
+               if fr else f"{len(roots)} alarm(s) shown for {len(hist)} detection(s), {len(roots) / (7 * 144):.2f} per 10 min (EEMUA 191 target: below 1).")]
+    # deferred production
+    lines += ["", "Production différée" if fr else "Deferred production"]
+    tot7 = tot30 = 0.0
+    top = []
+    for w in cfg.wells:
+        d7 = sum(v or 0 for d, v in store.series(w.id, "defer_m3", 7, "total"))
+        d30 = sum(v or 0 for d, v in store.series(w.id, "defer_m3", 30, "total"))
+        tot7 += d7
+        tot30 += d30
+        if d30 > 0.5:
+            top.append((d30, w.id))
+    lines.append((f"{tot7:.0f} m³ sur 7 jours, {tot30:.0f} m³ sur 30 jours, soit environ {tot30 * 6.2898 * cfg.oil_price_usd:,.0f} USD sur 30 jours."
+                   if fr else f"{tot7:.0f} m³ over 7 days, {tot30:.0f} m³ over 30 days, about {tot30 * 6.2898 * cfg.oil_price_usd:,.0f} USD over 30 days.").replace(",", " "))
+    for d30, wid in sorted(top, reverse=True)[:5]:
+        lines.append(f"- {wid} : {d30:.0f} m³")
+    lines += ["", ("L'agent propose, l'équipe décide : chaque point est une recommandation fondée sur les données, à valider sur le terrain. "
+                   "Données lues en lecture seule ; aucune commande n'est envoyée au SCADA." if fr else
+                   "The agent proposes, the team decides: each item is a data-based recommendation, to be checked in the field. "
+                   "Data read only; no command is sent to the SCADA.")]
+    body = "\n".join(lines)
+    summary = llm_summary(cfg, body)
+    if summary:
+        body = ("Synthèse\n" if fr else "Summary\n") + summary + "\n\n" + body
+    subject = (f"Rapport hebdomadaire d'analyse {cfg.site_name} — {len(urgent)} urgent(s)" if fr
+               else f"Weekly analysis report {cfg.site_name} — {len(urgent)} urgent")
+    return subject, body, per_team, found
