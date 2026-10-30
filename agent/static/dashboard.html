@@ -110,6 +110,8 @@ textarea{min-height:60px;resize:vertical}
   <button type="button" role="tab" data-tab="tests" aria-selected="false">Essais de puits</button>
   <button type="button" role="tab" data-tab="log" aria-selected="false">Main courante</button>
   <button type="button" role="tab" data-tab="ask" aria-selected="false">Assistant</button>
+  <button type="button" role="tab" data-tab="data" aria-selected="false" data-role="supervisor">Données</button>
+  <a href="/setup" data-role="supervisor" id="setupLink" style="margin-left:auto;align-self:center;font-size:.88rem;color:var(--muted)">Paramètres</a>
 </nav>
 <div data-panel="surv">
 
@@ -244,6 +246,37 @@ textarea{min-height:60px;resize:vertical}
     <div class="chips" id="askSug"></div>
     <form class="f" id="askForm"><label class="wide"><span id="lAsk">Question</span><input name="q" autocomplete="off" required></label>
       <div><button class="primary" type="submit" id="askBtn">Demander</button></div></form>
+  </section>
+</div>
+<div data-panel="data" hidden>
+  <section>
+    <h2><span id="hData">Charger des données de l'historien</span></h2>
+    <p class="empty" id="dataHelp">Export de l'historien (CSV, tel qu'il sort), la liste des tags si elle existe, et la main courante (journal des événements) sur la même période. L'agent nettoie, reconnaît les tags, puis peut rejouer la période (backtest) ou l'ajouter à son historique pour que l'analyse long terme fonctionne tout de suite.</p>
+    <form class="f" id="upForm">
+      <label><span>1. Export de l'historien *</span><input type="file" name="data" accept=".csv,.txt" required></label>
+      <label><span>Liste des tags (option)</span><input type="file" name="tags" accept=".csv,.txt"></label>
+      <label><span>Main courante / événements (option)</span><input type="file" name="events" accept=".csv,.txt"></label>
+      <div><button class="primary" type="submit" id="upBtn">Envoyer et reconnaître les tags</button></div>
+    </form>
+    <p class="empty" id="upMsg" role="status"></p>
+  </section>
+  <section id="mapSec" hidden>
+    <h2><span>2. Correspondance des tags</span><small id="mapInfo"></small></h2>
+    <p class="empty">Vérifier chaque ligne. Vider le tag pour ignorer un signal. Unités acceptées : bar, psi, kPa, MPa, kg/cm2, °C, °F, V.</p>
+    <div class="wrap"><table><thead><tr><th>Équipement</th><th>Signal</th><th>Tag</th><th>Unité</th></tr></thead><tbody id="mapRows"></tbody></table></div>
+    <div class="ackrow"><button class="primary" type="button" id="impBtn">Importer</button></div>
+    <p class="empty" id="impMsg" role="status"></p>
+  </section>
+  <section id="resSec" hidden>
+    <h2><span>3. Résultat</span></h2>
+    <div class="pre" id="impSum"></div>
+    <p><a id="qLink" target="_blank" rel="noopener">Rapport de qualité des données</a></p>
+    <div class="ackrow">
+      <button type="button" id="btBtn">Rejouer la période (backtest)</button>
+      <button type="button" id="hiBtn">Ajouter à l'historique de l'agent</button>
+    </div>
+    <p class="empty" id="btMsg" role="status"></p>
+    <div class="pre" id="btSum"></div>
   </section>
 </div>
 <footer id="foot"></footer>
@@ -381,7 +414,7 @@ refresh(); setInterval(refresh, 3000);
 
 // ------------------------------------------------------------------ v2: office work
 const TX2 = {
-  fr:{tabs:{surv:"Surveillance",prod:"Production",wo:"Ordres de travail",tests:"Essais de puits",log:"Main courante",ask:"Assistant"},
+  fr:{tabs:{surv:"Surveillance",prod:"Production",wo:"Ordres de travail",tests:"Essais de puits",log:"Main courante",ask:"Assistant",data:"Données"},
       roles:{viewer:"lecture seule",operator:"opérateur",supervisor:"superviseur"},
       stat:{production:"En production",shut:"Fermé",test:"En essai",work:"En intervention"},
       kinds:{note:"Note",status:"Changement d'état d'un puits",intervention:"Intervention réalisée",handover:"Relève",system:"Système"},
@@ -398,7 +431,7 @@ const TX2 = {
       mode:{rules:"sans IA (règles)",local:"IA locale sur le site",off:"désactivé"},
       sug:["Alarmes en cours","Quels puits sont fermés ?","Production différée hier","Essais en retard","Ordres de travail","Priorités de la semaine"],
       ask0:"Posez une question sur les puits, les alarmes, la production, les essais ou les ordres de travail.", err:"Erreur"},
-  en:{tabs:{surv:"Monitoring",prod:"Production",wo:"Work orders",tests:"Well tests",log:"Logbook",ask:"Assistant"},
+  en:{tabs:{surv:"Monitoring",prod:"Production",wo:"Work orders",tests:"Well tests",log:"Logbook",ask:"Assistant",data:"Data"},
       roles:{viewer:"read-only",operator:"operator",supervisor:"supervisor"},
       stat:{production:"Producing",shut:"Shut in",test:"On test",work:"Under intervention"},
       kinds:{note:"Note",status:"Well status change",intervention:"Intervention done",handover:"Handover",system:"System"},
@@ -442,7 +475,7 @@ function fillSelects(){
 }
 function labels(){
   const X = V();
-  document.querySelectorAll("#tabs [data-tab]").forEach(b => { const c = b.querySelector(".cnt"); b.textContent = X.tabs[b.dataset.tab]; if(c) b.appendChild(c); });
+  document.querySelectorAll("#tabs [data-tab]").forEach(b => { const c = b.querySelector(".cnt"); b.textContent = X.tabs[b.dataset.tab] || b.textContent; if(c) b.appendChild(c); });
   $("user").textContent = ME.name ? `${ME.name} · ${X.roles[ME.role] || ME.role}` : "";
   document.querySelector('[data-tab="ask"]').hidden = ME.assistant === "off";
   document.querySelectorAll("[data-role]").forEach(el => el.hidden = !can(el.dataset.role));
@@ -455,6 +488,7 @@ async function loadTab(){
     else if(TAB === "tests") await loadTests();
     else if(TAB === "log") await loadLog();
     else if(TAB === "ask") initAsk();
+    else if(TAB === "data") {}
   }catch(e){ console.log(e); }
 }
 // ---- production
@@ -579,6 +613,63 @@ async function ask(q){
 }
 $("askForm").addEventListener("submit", e => { e.preventDefault(); const q = e.target.q.value.trim(); if(q){ e.target.q.value = ""; ask(q); } });
 $("askSug").addEventListener("click", e => { const b = e.target.closest("[data-q]"); if(b) ask(b.dataset.q); });
+// ---- data upload (supervisor)
+let UP = {}, IMPJOB = null;
+async function upload(file){
+  const r = await fetch("/api/data/upload?name=" + encodeURIComponent(file.name), {method:"POST", headers:{"X-Requested-With":"agent","Content-Type":"application/octet-stream"}, body:file});
+  const j = await r.json(); if(!r.ok) throw new Error(j.error || r.status); return j.id;
+}
+async function waitJob(id, el){
+  for(;;){
+    const j = await post("/api/data/job", {job:id});
+    if(j.status === "done") return j.result;
+    if(j.status === "error") throw new Error(j.error);
+    if(el && j.progress) el.textContent = "… " + j.progress;
+    await new Promise(r => setTimeout(r, 1500));
+  }
+}
+$("upForm").addEventListener("submit", async e => {
+  e.preventDefault(); const f = e.target; $("upBtn").disabled = true;
+  try{
+    UP = {};
+    for(const k of ["data","tags","events"]){ const file = f[k].files[0]; if(file){ $("upMsg").textContent = `Envoi de ${file.name} (${(file.size/1e6).toFixed(1)} Mo)…`; UP[k] = await upload(file); } }
+    $("upMsg").textContent = "Reconnaissance des tags…";
+    const job = await post("/api/data/guess", {data:UP.data, tags:UP.tags});
+    const r = await waitJob(job.id, $("upMsg"));
+    $("mapRows").innerHTML = r.rows.map((x,i) => `<tr data-map="${i}"><td>${esc(x.entity)}</td><td>${esc(x.signal)}</td><td><input data-mf="tag" value="${esc(x.tag)}"></td><td><input data-mf="unit" value="${esc(x.unit)}" style="width:90px"></td></tr>`).join("");
+    window._maprows = r.rows;
+    $("mapInfo").textContent = `${r.rows.length} signaux reconnus, ${r.unknown.length} tags ignorés · ${r.info.format}, ${r.info.encoding}`;
+    $("mapSec").hidden = false; $("upMsg").textContent = "Fichiers reçus.";
+  }catch(err){ alertBox($("upMsg"), err); }
+  $("upBtn").disabled = false;
+});
+document.addEventListener("input", e => { const t = e.target; const tr = t.closest("[data-map]"); if(tr && t.dataset.mf) window._maprows[+tr.dataset.map][t.dataset.mf] = t.value.trim(); });
+$("impBtn").addEventListener("click", async () => {
+  $("impBtn").disabled = true; $("impMsg").textContent = "Import et nettoyage…";
+  try{
+    const job = await post("/api/data/import", {data:UP.data, events:UP.events, rows:window._maprows});
+    const r = await waitJob(job.id, $("impMsg")); IMPJOB = job.id;
+    $("impSum").textContent = r.summary + (r.review ? `\nLignes du journal à vérifier : ${r.review}` : "");
+    $("qLink").href = r.quality; $("resSec").hidden = false; $("impMsg").textContent = "Import terminé.";
+    $("btBtn").disabled = !r.events && false;
+  }catch(err){ alertBox($("impMsg"), err); }
+  $("impBtn").disabled = false;
+});
+$("btBtn").addEventListener("click", async () => {
+  $("btBtn").disabled = true; $("btMsg").textContent = "Backtest en cours (une année prend une à deux minutes)…";
+  try{ const job = await post("/api/data/backtest", {job:IMPJOB}); const r = await waitJob(job.id, $("btMsg"));
+    $("btSum").textContent = r.summary; $("btMsg").innerHTML = `Terminé. <a href="${esc(r.report)}" target="_blank" rel="noopener">Ouvrir le rapport de backtest</a>`;
+  }catch(err){ alertBox($("btMsg"), err); }
+  $("btBtn").disabled = false;
+});
+$("hiBtn").addEventListener("click", async () => {
+  $("hiBtn").disabled = true; $("btMsg").textContent = "Ajout à l'historique…";
+  try{ const job = await post("/api/data/history", {job:IMPJOB}); const r = await waitJob(job.id, $("btMsg"));
+    $("btMsg").textContent = `Historique ajouté : ${r.days} jours (${r.first} → ${r.last}), ${r.events} événements dans la main courante. L'analyse long terme les utilise dès maintenant.`;
+    refreshAnalysis();
+  }catch(err){ alertBox($("btMsg"), err); }
+  $("hiBtn").disabled = false;
+});
 (async () => {
   try{ ME = await getj("/api/me"); }catch(e){}
   let t = "surv"; try{ t = localStorage.getItem("tab") || "surv"; }catch(e){}

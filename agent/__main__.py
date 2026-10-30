@@ -1,6 +1,7 @@
 """Command line.
 
-    python -m agent run        --config config/config.yaml    start the surveillance
+    python -m agent run        --config config/config.yaml    start the surveillance (opens the setup wizard if there is no configuration yet)
+    python -m agent setup      --config config/config.yaml    open the setup wizard on http://127.0.0.1:8080/setup
     python -m agent check      --config config/config.yaml    read every tag once and print it (commissioning)
     python -m agent browse     --config config/config.yaml    list the OPC UA nodes to find tag addresses
     python -m agent test-sms   --config config/config.yaml --to +213...
@@ -27,12 +28,13 @@ from . import config
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="agent", description="Well surveillance agent (read-only)")
-    ap.add_argument("command", choices=["run", "check", "browse", "test-sms", "test-email", "backtest", "status", "add-user", "del-user", "import"])
+    ap.add_argument("command", choices=["run", "setup", "check", "browse", "test-sms", "test-email", "backtest", "status", "add-user", "del-user", "import"])
     ap.add_argument("--config", default=os.environ.get("AGENT_CONFIG", "config/config.yaml"))
     ap.add_argument("--to", help="recipient for test-sms / test-email")
     ap.add_argument("--node", help="browse: start node (default Objects)")
     ap.add_argument("--depth", type=int, default=3)
     ap.add_argument("--no-web", action="store_true")
+    ap.add_argument("--port", type=int, default=8080, help="setup: port of the setup wizard (default 8080)")
     ap.add_argument("--name", help="add-user / del-user: person's name")
     ap.add_argument("--role", choices=["viewer", "operator", "supervisor"], default="operator")
     ap.add_argument("--data", help="import: historian export (long or wide CSV)")
@@ -49,16 +51,14 @@ def main(argv=None):
     logging.basicConfig(level=logging.DEBUG if a.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("asyncua").setLevel(logging.WARNING)
+    if a.command in ("run", "setup"):
+        return run_forever(a)
     try:
         cfg = config.load(a.config)
     except (OSError, config.ConfigError) as e:
         print(f"Configuration error: {e}", file=sys.stderr)
         return 2
 
-    if a.command == "run":
-        from .app import App
-        App(cfg).run(web=not a.no_web)
-        return 0
 
     if a.command == "status":
         from .upkeep import status
@@ -165,6 +165,29 @@ def main(argv=None):
     d.flush(60)
     print("Sent (check the recipient). Delivery errors, if any, are printed above.")
     return 0
+
+
+def run_forever(a):
+    """run: start the surveillance; with no configuration yet, start the setup wizard first.
+    setup: open the wizard even if a configuration exists. After settings are saved from
+    the dashboard, the agent restarts itself with the new configuration."""
+    from .app import App
+    from .web import serve_setup
+    want_setup = a.command == "setup"
+    while True:
+        if want_setup or not os.path.exists(a.config):
+            serve_setup(a.config, a.port)
+            want_setup = False
+        try:
+            cfg = config.load(a.config)
+        except (OSError, config.ConfigError) as e:
+            print(f"Configuration error: {e}", file=sys.stderr)
+            return 2
+        app = App(cfg)
+        app.run(web=not a.no_web)
+        if not app.restart:
+            return 0
+        logging.getLogger("agent").info("restarting with the new configuration")
 
 
 if __name__ == "__main__":

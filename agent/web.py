@@ -52,9 +52,142 @@ class Denied(Exception):
     pass
 
 
+class SetupAPI:
+    """The setup wizard's API, used before any configuration exists (local PC only)
+    and afterwards by supervisors to change settings."""
+
+    def __init__(self, config_path, cfg=None, on_saved=None):
+        self.path = config_path
+        self.cfg = cfg
+        self.on_saved = on_saved
+
+    def state(self):
+        from . import wizard
+        from .users import Users
+        users = Users(self.cfg) if self.cfg else None
+        return {"configured": self.cfg is not None, "form": wizard.current_form(self.cfg),
+                "has_users": bool(users), "config_path": os.path.abspath(self.path)}
+
+    def _cfg_from(self, b):
+        from . import wizard
+        text, secrets = wizard.build(b["form"])
+        if b.get("yaml"):
+            text = b["yaml"]
+        cfg, err = wizard.validate(text, secrets, self.path)
+        if err:
+            raise ValueError(err)
+        return cfg, text, secrets
+
+    def post(self, p, b):
+        from . import wizard
+        f = b.get("form", {})
+        if p == "/api/setup/test-opcua":
+            return wizard.test_opcua(f.get("opcua_url", ""), f.get("opcua_user", ""), f.get("opcua_password", ""), f.get("opcua_security", ""))
+        if p == "/api/setup/discover":
+            v = wizard.discover_opcua(f.get("opcua_url", ""), f.get("opcua_user", ""), f.get("opcua_password", ""), f.get("opcua_security", ""))
+            r = wizard.propose(v)
+            r["n_variables"] = len(v)
+            return r
+        if p == "/api/setup/preview":
+            from . import wizard as w_
+            text, secrets = w_.build(f)
+            cfg, err = w_.validate(b.get("yaml") or text, secrets, self.path)
+            return {"yaml": text, "error": err, "wells": len(cfg.wells) if cfg else 0}
+        if p == "/api/setup/read-tags":
+            cfg, _, _ = self._cfg_from(b)
+            return wizard.read_once(cfg)
+        if p in ("/api/setup/test-sms", "/api/setup/test-email"):
+            cfg, _, _ = self._cfg_from(b)
+            from .notify import Dispatcher
+            d = Dispatcher(cfg, None)
+            to = str(b.get("to", "")).strip()
+            if not to:
+                raise ValueError("recipient required")
+            try:
+                if p.endswith("sms"):
+                    d.smsc.send(to, "Test SMS - agent de surveillance des puits")
+                else:
+                    d._send_email([to], "Test e-mail - agent de surveillance des puits", "Si vous lisez ce message, l'envoi d'e-mails fonctionne.")
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+            where = d.outbox if (cfg.sms.get("type") == "console" and p.endswith("sms")) or (cfg.email.get("type") == "console" and p.endswith("email")) else ""
+            return {"ok": True, "outbox": where}
+        if p == "/api/setup/save":
+            cfg, text, secrets = self._cfg_from(b)
+            from .users import Users
+            u = Users(cfg)
+            adm = b.get("admin") or {}
+            if adm.get("name") and adm.get("password"):
+                u.add(adm["name"], "supervisor", adm["password"])
+            if not u and cfg.web["host"] not in ("127.0.0.1", "localhost", "::1"):
+                raise ValueError("create a supervisor account before opening the dashboard to the network")
+            wizard.save(self.path, text, secrets)
+            if self.on_saved:
+                threading.Timer(1.0, self.on_saved).start()
+            return {"ok": True, "path": os.path.abspath(self.path)}
+        raise ValueError("not found")
+
+
+def serve_setup(config_path, port=8080, host="127.0.0.1"):
+    """Wizard alone, before the agent has a configuration. Returns when it is saved."""
+    done = threading.Event()
+    api = SetupAPI(config_path, None, done.set)
+
+    class S(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def _json(self, code, obj):
+            data = json.dumps(obj, default=str, ensure_ascii=False).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def do_GET(self):
+            p = urlparse(self.path).path
+            if p in ("/", "/setup", "/index.html"):
+                with open(os.path.join(STATIC, "setup.html"), "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            elif p == "/api/setup/state":
+                self._json(200, api.state())
+            else:
+                self._json(404, {"error": "not found"})
+
+        def do_POST(self):
+            try:
+                if self.headers.get("X-Requested-With") != "agent":
+                    return self._json(403, {"error": "forbidden"})
+                n = int(self.headers.get("Content-Length", "0") or 0)
+                b = json.loads(self.rfile.read(n) or b"{}")
+                self._json(200, api.post(urlparse(self.path).path, b))
+            except Exception as e:  # noqa: BLE001
+                self._json(400, {"error": str(e)})
+
+    srv = ThreadingHTTPServer((host, port), S)
+    threading.Thread(target=srv.serve_forever, daemon=True, name="setup").start()
+    log.warning("No configuration yet: open http://%s:%s/setup on this PC to set the agent up", host, port)
+    print(f"\n  Setup: open http://{host}:{port}/setup in a browser on this PC\n", flush=True)
+    try:
+        while not done.wait(1):
+            pass
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
 def serve(app):
     cfg = app.cfg
     pw = secret(cfg.web.get("password_env"))
+    from .datajobs import DataJobs
+    app.data = getattr(app, "data", None) or DataJobs(app)
+    setup = SetupAPI(cfg.path, cfg, app.request_restart)
     hook_token = secret(cfg.web.get("webhook_token_env", "SMS_WEBHOOK_TOKEN"))
 
     class H(BaseHTTPRequestHandler):
@@ -117,6 +250,8 @@ def serve(app):
         def do_GET(self):
             try:
                 self._get()
+            except Denied as e:
+                self._json(403, {"error": f"role {e} required"})
             except Exception as e:  # noqa: BLE001
                 log.exception("GET %s", self.path)
                 self._json(500, {"error": str(e)})
@@ -128,6 +263,23 @@ def serve(app):
             u = urlparse(self.path)
             q = {k: v[-1] for k, v in parse_qs(u.query).items()}
             p = u.path
+            if p == "/setup":
+                self._need(who[1], "supervisor")
+                with open(os.path.join(STATIC, "setup.html"), "rb") as f:
+                    return self._raw(200, f.read(), "text/html; charset=utf-8", {"X-Frame-Options": "DENY"})
+            if p == "/api/setup/state":
+                self._need(who[1], "supervisor")
+                return self._json(200, setup.state())
+            if p.startswith("/reports/"):
+                f = app.data.report_path(p[len("/reports/"):])
+                if not f:
+                    return self._json(404, {"error": "not found"})
+                with open(f, "rb") as fh:
+                    return self._raw(200, fh.read(), "text/html; charset=utf-8" if f.endswith(".html") else "text/plain; charset=utf-8",
+                                     {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:"})
+            if p == "/api/data/jobs":
+                self._need(who[1], "supervisor")
+                return self._json(200, {"jobs": app.data.list()})
             if p in ("/", "/index.html"):
                 with open(os.path.join(STATIC, "dashboard.html"), "rb") as f:
                     data = f.read()
@@ -188,8 +340,29 @@ def serve(app):
                 if self.headers.get("X-Requested-With") != "agent":   # blocks cross-site form posts
                     return self._json(403, {"error": "forbidden"})
                 name, role = who
+                u = urlparse(self.path)
+                p = u.path
+                if p == "/api/data/upload":
+                    self._need(role, "supervisor")
+                    nm = parse_qs(u.query).get("name", ["fichier.csv"])[-1]
+                    return self._json(200, app.data.save_upload(nm, self.rfile, int(self.headers.get("Content-Length", "0") or 0)))
                 b = self._body()
-                p = urlparse(self.path).path
+                if p.startswith("/api/setup/"):
+                    self._need(role, "supervisor")
+                    return self._json(200, setup.post(p, b))
+                if p.startswith("/api/data/"):
+                    self._need(role, "supervisor")
+                    d = app.data
+                    if p == "/api/data/guess":
+                        return self._json(200, d.guess(b["data"], b.get("tags")))
+                    if p == "/api/data/import":
+                        return self._json(200, d.run_import(b["data"], b.get("rows", []), b.get("events")))
+                    if p == "/api/data/backtest":
+                        return self._json(200, d.backtest(b["job"]))
+                    if p == "/api/data/history":
+                        return self._json(200, d.load_history(b["job"]))
+                    if p == "/api/data/job":
+                        return self._json(200, d.get(b["job"]) or {"status": "unknown"})
                 if p == "/api/ask":
                     self._need(role, "viewer")
                     return self._json(200, app.assistant.answer(str(b.get("q", ""))))

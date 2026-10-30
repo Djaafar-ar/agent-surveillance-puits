@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mise en service de l'agent</title>
+<style>
+:root{--bg:#d9dbd6;--panel:#eceee9;--ink:#1d211f;--muted:#5b625e;--line:#c4c8c1;--bad:#b3122e;--warn:#8a5a00;--ok:#2f6b3a;--chip:#e2e5df;--field:#f6f7f4}
+@media (prefers-color-scheme:dark){:root{--bg:#141716;--panel:#1d2120;--ink:#e6e9e4;--muted:#a3aaa5;--line:#323835;--bad:#ff6b7f;--warn:#e6b450;--ok:#7cc48a;--chip:#262b29;--field:#141716}}
+*{box-sizing:border-box} [hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding:20px 16px 80px}
+header{border-bottom:2px solid var(--ink);padding-bottom:10px;margin-bottom:14px}
+h1{font-size:1.6rem;margin:0} .sub{color:var(--muted);margin:2px 0 0}
+nav.steps{position:sticky;top:0;z-index:2;background:var(--bg);display:flex;flex-wrap:wrap;gap:4px;padding:8px 0;border-bottom:1px solid var(--line);margin-bottom:12px}
+nav.steps a{color:var(--muted);text-decoration:none;font-weight:600;font-size:.88rem;padding:4px 8px;border-radius:6px}
+nav.steps a.done{color:var(--ok)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:16px;scroll-margin-top:56px}
+h2{font-size:1.1rem;margin:0 0 4px} .help{color:var(--muted);margin:0 0 12px;font-size:.92rem}
+.f{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end}
+label{display:flex;flex-direction:column;gap:3px;font-size:.82rem;color:var(--muted)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+textarea{min-height:70px} textarea.code{font:13px/1.4 ui-monospace,Consolas,monospace;min-height:380px}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:6px;cursor:pointer}
+button.primary{background:var(--ink);color:var(--panel);border-color:var(--ink)} button:disabled{opacity:.5;cursor:default}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.msg{font-size:.92rem;margin:8px 0 0;white-space:pre-wrap} .ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:.9rem} th,td{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:.78rem;color:var(--muted)} td input,td select{padding:4px 6px} td select{min-width:110px}
+.wrap{overflow-x:auto} details summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+.tags{display:grid;grid-template-columns:140px 1fr;gap:3px 8px;margin-top:6px}
+.tags span{font-size:.8rem;color:var(--muted);align-self:center}
+.chip{display:inline-block;padding:2px 8px;border-radius:999px;background:var(--chip);font-size:.8rem}
+footer{color:var(--muted);font-size:.85rem;text-align:center}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Mise en service de l'agent de surveillance</h1>
+  <p class="sub" id="sub">Sept étapes. Rien n'est envoyé au SCADA : l'agent ne fait que lire.</p>
+</header>
+<nav class="steps" id="steps">
+  <a href="#s1">1. Site</a><a href="#s2">2. SCADA</a><a href="#s3">3. Puits</a><a href="#s4">4. Personnes</a>
+  <a href="#s5">5. SMS et e-mail</a><a href="#s6">6. Accès</a><a href="#s7">7. Vérifier et démarrer</a>
+</nav>
+
+<section id="s1">
+  <h2>1. Le site</h2>
+  <div class="f">
+    <label>Nom du site<input data-k="site_name" placeholder="Champ Nord"></label>
+    <label>Langue des messages<select data-k="language"><option value="fr">Français</option><option value="en">English</option></select></label>
+    <label>Lecture toutes les (secondes)<input data-k="poll_seconds" type="number" min="5" max="300" value="60"></label>
+  </div>
+</section>
+
+<section id="s2">
+  <h2>2. Connexion au SCADA (OPC UA)</h2>
+  <p class="help">Adresse du serveur OPC UA du SCADA ou de l'historien, et un compte <b>en lecture seule</b> créé par l'équipe SCADA. Modbus : voir le guide d'installation.</p>
+  <div class="f">
+    <label>Adresse OPC UA<input data-k="opcua_url" placeholder="opc.tcp://192.168.10.20:4840"></label>
+    <label>Utilisateur (lecture seule)<input data-k="opcua_user" autocomplete="off"></label>
+    <label>Mot de passe<input data-k="opcua_password" type="password" autocomplete="new-password" placeholder="laisser vide pour ne pas changer"></label>
+    <label>Sécurité (option)<input data-k="opcua_security" placeholder="Basic256Sha256,SignAndEncrypt,certs/cert.der,certs/key.pem"></label>
+  </div>
+  <div class="row">
+    <button type="button" id="bTest">Tester la connexion</button>
+    <button type="button" class="primary" id="bDisc">Explorer le SCADA et reconnaître les puits</button>
+  </div>
+  <p class="msg" id="mConn" role="status"></p>
+</section>
+
+<section id="s3">
+  <h2>3. Puits et manifolds</h2>
+  <p class="help">Proposé à partir des noms des tags. Vérifier chaque ligne : type de puits, manifold, répéteur radio. Décocher un puits à ne pas surveiller. Les tags de chaque puits sont modifiables dans « tags ».</p>
+  <h3 style="font-size:.95rem;margin:8px 0 4px">Manifolds</h3>
+  <div class="wrap"><table><thead><tr><th>Manifold</th><th>Répéteur radio</th><th>Station satellite</th><th>Tags</th><th></th></tr></thead><tbody id="tMan"></tbody></table></div>
+  <div class="row"><button type="button" id="bAddMan">Ajouter un manifold</button></div>
+  <h3 style="font-size:.95rem;margin:14px 0 4px">Puits <span class="chip" id="nWells">0</span></h3>
+  <div class="wrap"><table><thead><tr><th></th><th>Puits</th><th>Type</th><th>Manifold</th><th>Répéteur</th><th>MAASP (bar)</th><th>Potentiel (m³/j)</th><th>Tags</th></tr></thead><tbody id="tWells"></tbody></table></div>
+  <div class="row"><button type="button" id="bAddWell">Ajouter un puits</button></div>
+</section>
+
+<section id="s4">
+  <h2>4. Les personnes</h2>
+  <p class="help">Liste d'astreinte, dans l'ordre d'escalade : le premier reçoit le SMS, puis le suivant si personne ne répond « OK ».</p>
+  <div class="wrap"><table><thead><tr><th>Nom</th><th>Rôle</th><th>Téléphone</th><th></th></tr></thead><tbody id="tRoster"></tbody></table></div>
+  <div class="row"><button type="button" id="bAddPers">Ajouter une personne</button></div>
+  <div class="f" style="margin-top:12px">
+    <label>Escalade après (minutes)<input data-k="escalation_min" type="number" min="2" value="10"></label>
+    <label>E-mails des alarmes<input data-k="alarm_to" placeholder="salle.controle@site.dz"></label>
+    <label>E-mails des rapports (superviseur)<input data-k="report_to" placeholder="superviseur@site.dz"></label>
+    <label>Changements de quart<input data-k="shift_changes" placeholder="06:00, 18:00"></label>
+    <label>Heure du rapport journalier<input data-k="daily_report_hour" type="number" min="0" max="23" value="7"></label>
+  </div>
+  <p class="help" style="margin-top:12px">E-mails des équipes, pour les ordres de travail (facultatif) :</p>
+  <div class="f" id="teams"></div>
+</section>
+
+<section id="s5">
+  <h2>5. SMS et e-mail</h2>
+  <div class="f">
+    <label>Envoi des SMS<select data-k="sms_type"><option value="console">Test (fichier, aucun SMS envoyé)</option><option value="gsm_modem">Modem GSM USB</option><option value="android_gateway">Téléphone Android (SMS Gateway)</option></select></label>
+    <label data-show="sms_type=gsm_modem">Port du modem<input data-k="sms_port" placeholder="COM3"></label>
+    <label data-show="sms_type=gsm_modem">Code PIN de la carte SIM<input data-k="sim_pin" type="password"></label>
+    <label data-show="sms_type=android_gateway">Adresse de la passerelle<input data-k="sms_url" placeholder="http://192.168.1.50:8080"></label>
+    <label data-show="sms_type=android_gateway">Utilisateur<input data-k="sms_user"></label>
+    <label data-show="sms_type=android_gateway">Mot de passe<input data-k="sms_password" type="password"></label>
+  </div>
+  <div class="row"><input id="smsTo" placeholder="+213 6..." style="max-width:200px"><button type="button" id="bSms">Envoyer un SMS de test</button></div>
+  <p class="msg" id="mSms" role="status"></p>
+  <div class="f" style="margin-top:14px">
+    <label>Envoi des e-mails<select data-k="email_type"><option value="console">Test (fichiers .eml, aucun e-mail envoyé)</option><option value="smtp">Serveur SMTP</option></select></label>
+    <label data-show="email_type=smtp">Serveur SMTP<input data-k="smtp_host" placeholder="smtp.site.dz"></label>
+    <label data-show="email_type=smtp">Port<input data-k="smtp_port" type="number" value="587"></label>
+    <label data-show="email_type=smtp">Expéditeur<input data-k="smtp_from" placeholder="agent-surveillance@site.dz"></label>
+    <label data-show="email_type=smtp">Utilisateur SMTP<input data-k="smtp_user"></label>
+    <label data-show="email_type=smtp">Mot de passe SMTP<input data-k="smtp_password" type="password"></label>
+  </div>
+  <div class="row"><input id="mailTo" placeholder="vous@site.dz" style="max-width:240px"><button type="button" id="bMail">Envoyer un e-mail de test</button></div>
+  <p class="msg" id="mMail" role="status"></p>
+</section>
+
+<section id="s6">
+  <h2>6. Accès au tableau de bord</h2>
+  <div class="f">
+    <label>Tableau de bord visible<select data-k="web_host"><option value="127.0.0.1">Sur ce PC seulement</option><option value="0.0.0.0">Depuis le réseau de la salle de contrôle</option></select></label>
+    <label>Port<input data-k="web_port" type="number" value="8080"></label>
+  </div>
+  <p class="help" style="margin-top:12px" id="admHelp">Compte superviseur (obligatoire si le tableau de bord est ouvert au réseau). Les autres comptes se créent ensuite avec <code>python -m agent add-user</code>.</p>
+  <div class="f">
+    <label>Nom<input id="admName" autocomplete="off"></label>
+    <label>Mot de passe (8 caractères minimum)<input id="admPw" type="password" autocomplete="new-password"></label>
+  </div>
+</section>
+
+<section id="s7">
+  <h2>7. Vérifier et démarrer</h2>
+  <div class="row">
+    <button type="button" id="bRead">Lire chaque tag une fois</button>
+    <button type="button" id="bYaml">Voir le fichier de configuration</button>
+  </div>
+  <p class="msg" id="mRead" role="status"></p>
+  <div class="wrap" id="readWrap" hidden><table><thead><tr><th>Équipement</th><th>Signal</th><th>Valeur</th><th>Qualité</th><th>Âge</th><th>Adresse</th></tr></thead><tbody id="tRead"></tbody></table></div>
+  <div id="yamlWrap" hidden><p class="help">Modifiable pour les réglages avancés (seuils...). Les mots de passe ne sont jamais dans ce fichier.</p><textarea class="code" id="yaml" spellcheck="false"></textarea></div>
+  <div class="row"><button type="button" class="primary" id="bSave">Enregistrer et démarrer la surveillance</button></div>
+  <p class="msg" id="mSave" role="status"></p>
+</section>
+<footer>L'agent lit le SCADA et n'envoie jamais de commande. Il ne remplace ni les alarmes du SCADA ni les systèmes de sécurité.</footer>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const TEAMS = {production:"Production", instrumentation:"Instrumentation", telecom:"Télécom / radio", maintenance:"Maintenance électrique", hse:"Intégrité / HSE"};
+const TYPES = {natural:"Éruptif", natural_water:"Éruptif avec eau de dessalage", gas_lift:"Gas lift"};
+const SIGLAB = {whp:"Pression tête",wht:"Température tête",line_p:"Pression ligne (aval duse)",arrival_p:"Pression d'arrivée",ann:"Annulaire 9 5/8",ann_7:"Annulaire 7\"",
+  oil_rate:"Débit huile",gl_flow:"Débit gas lift",gl_inj_p:"Pression injection GL",gl_setpoint:"Consigne GL",gl_valve_pos:"Position vanne GL",gl_mode_auto:"Mode auto GL",
+  water_flow:"Débit eau",on_test:"En essai",battery:"Batterie RTU",battery_current:"Courant batterie",solar_current:"Courant panneau",solar_voltage:"Tension panneau",
+  cabinet_temp:"Température coffret",io_fault:"Défaut carte E/S",comm_ok:"État RTU",sdv_closed:"SDV fermée",fire:"Feu",remote_cmd:"Télécommande",intrusion:"Intrusion",
+  pit_cover_open:"Dalle fosse",cabinet_door_open:"Porte coffret",shelter_door_open:"Porte shelter",concertina_alarm:"Concertina",presence_5m:"Présence 5 m",
+  p_man:"Collecteur production",p_test:"Collecteur test",p_gl:"Réseau gas lift"};
+let F = {wells:[], manifolds:[], roster:[], teams:{}};
+let base = "";
+async function post(path, body){
+  const r = await fetch(base + path, {method:"POST", headers:{"Content-Type":"application/json","X-Requested-With":"agent"}, body:JSON.stringify(body)});
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+function collect(){
+  document.querySelectorAll("[data-k]").forEach(el => { F[el.dataset.k] = el.value; });
+  F.teams = {}; document.querySelectorAll("[data-team]").forEach(el => { if(el.value.trim()) F.teams[el.dataset.team] = el.value; });
+  return F;
+}
+function fill(){
+  document.querySelectorAll("[data-k]").forEach(el => { if(F[el.dataset.k] != null && F[el.dataset.k] !== "") el.value = F[el.dataset.k]; });
+  $("teams").innerHTML = Object.entries(TEAMS).map(([k,v]) => `<label>${esc(v)}<input data-team="${k}" value="${esc((F.teams||{})[k] || "")}"></label>`).join("");
+  renderMan(); renderWells(); renderRoster(); showHide();
+}
+function showHide(){
+  document.querySelectorAll("[data-show]").forEach(el => { const [k,v] = el.dataset.show.split("="); el.hidden = (document.querySelector(`[data-k="${k}"]`).value !== v); });
+}
+document.addEventListener("change", e => { if(e.target.matches("[data-k]")) showHide(); });
+function tagEditor(obj, keys){
+  return `<details><summary>${Object.values(obj.tags||{}).filter(Boolean).length} tags</summary><div class="tags">${keys.map(k =>
+    `<span>${esc(SIGLAB[k]||k)}</span><input data-tag="${k}" value="${esc((obj.tags||{})[k]||"")}">`).join("")}</div></details>`;
+}
+const WSIG = Object.keys(SIGLAB).filter(k => !k.startsWith("p_"));
+const MSIG = ["p_man","p_test","p_gl"];
+function renderMan(){
+  $("tMan").innerHTML = F.manifolds.map((m,i) => `<tr data-m="${i}"><td><input data-f="id" value="${esc(m.id)}"></td><td><input data-f="repeater" value="${esc(m.repeater||"")}" placeholder="R1"></td>
+    <td><input data-f="satellite" value="${esc(m.satellite||"")}"></td><td>${tagEditor(m, MSIG)}</td><td><button type="button" data-delm="${i}">×</button></td></tr>`).join("");
+  renderWells();
+}
+function renderWells(){
+  const mo = `<option value="">(aucun)</option>` + F.manifolds.map(m => `<option>${esc(m.id)}</option>`).join("");
+  $("tWells").innerHTML = F.wells.map((w,i) => `<tr data-w="${i}"><td><input type="checkbox" data-f="enabled" ${w.enabled === false ? "" : "checked"} aria-label="surveiller"></td>
+    <td><input data-f="id" value="${esc(w.id)}" style="min-width:90px"></td>
+    <td><select data-f="type">${Object.entries(TYPES).map(([k,v]) => `<option value="${k}" ${w.type === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></td>
+    <td><select data-f="manifold">${mo.replace(`<option>${esc(w.manifold||"")}</option>`, `<option selected>${esc(w.manifold||"")}</option>`)}</select></td>
+    <td><input data-f="repeater" value="${esc(w.repeater||"")}" placeholder="celui du manifold"></td>
+    <td><input data-f="maasp" type="number" value="${esc(w.maasp ?? "")}" style="width:90px"></td><td><input data-f="potential_m3d" type="number" value="${esc(w.potential_m3d ?? "")}" style="width:90px"></td>
+    <td>${tagEditor(w, WSIG)}</td></tr>`).join("");
+  $("nWells").textContent = F.wells.filter(w => w.enabled !== false).length;
+}
+function renderRoster(){
+  $("tRoster").innerHTML = F.roster.map((c,i) => `<tr data-r="${i}"><td><input data-f="name" value="${esc(c.name)}"></td><td><input data-f="role" value="${esc(c.role||"")}" placeholder="Technicien d'astreinte"></td>
+    <td><input data-f="phone" value="${esc(c.phone)}" placeholder="+2136..."></td><td><button type="button" data-delr="${i}">×</button></td></tr>`).join("");
+}
+document.addEventListener("input", e => {
+  const t = e.target, f = t.dataset.f, tag = t.dataset.tag;
+  const row = t.closest("[data-w],[data-m],[data-r]"); if(!row) return;
+  const obj = row.dataset.w != null ? F.wells[+row.dataset.w] : row.dataset.m != null ? F.manifolds[+row.dataset.m] : F.roster[+row.dataset.r];
+  if(tag){ obj.tags = obj.tags || {}; obj.tags[tag] = t.value; return; }
+  if(f) obj[f] = t.type === "checkbox" ? t.checked : t.value;
+  if(f === "id" && row.dataset.m != null) renderWells();
+});
+document.addEventListener("change", e => { const t = e.target; if(t.dataset.f === "enabled" || t.dataset.f === "manifold" || t.dataset.f === "type") t.dispatchEvent(new Event("input", {bubbles:true})); if(t.dataset.f === "enabled") $("nWells").textContent = F.wells.filter(w => w.enabled !== false).length; });
+document.addEventListener("click", e => {
+  const dm = e.target.closest("[data-delm]"), dr = e.target.closest("[data-delr]");
+  if(dm){ F.manifolds.splice(+dm.dataset.delm, 1); renderMan(); }
+  if(dr){ F.roster.splice(+dr.dataset.delr, 1); renderRoster(); }
+});
+$("bAddMan").onclick = () => { F.manifolds.push({id:"MAN-" + String.fromCharCode(65 + F.manifolds.length), repeater:"", tags:{}}); renderMan(); };
+$("bAddWell").onclick = () => { F.wells.push({id:"PUITS-" + String(F.wells.length + 1).padStart(2,"0"), type:"natural", tags:{}, enabled:true}); renderWells(); };
+$("bAddPers").onclick = () => { F.roster.push({name:"", role:"", phone:""}); renderRoster(); };
+function say(el, text, cls){ el.textContent = text; el.className = "msg " + (cls || ""); }
+async function busy(btn, fn){ btn.disabled = true; try{ await fn(); } finally{ btn.disabled = false; } }
+$("bTest").onclick = () => busy($("bTest"), async () => {
+  say($("mConn"), "Connexion…");
+  try{ const r = await post("/api/setup/test-opcua", {form: collect()});
+    r.ok ? say($("mConn"), `Connecté en ${r.ms} ms. Premiers éléments : ${r.sample.map(p => p.join("/")).join(", ")}`, "ok") : say($("mConn"), "Échec : " + r.error, "bad");
+  }catch(e){ say($("mConn"), "Échec : " + e.message, "bad"); }
+});
+$("bDisc").onclick = () => busy($("bDisc"), async () => {
+  say($("mConn"), "Exploration du serveur OPC UA…");
+  try{
+    const r = await post("/api/setup/discover", {form: collect()});
+    F.manifolds = r.manifolds.map(m => ({id:m.id, repeater:"", satellite:"", tags:m.tags}));
+    const one = F.manifolds.length === 1 ? F.manifolds[0].id : "";
+    F.wells = r.wells.map(w => ({id:w.id, type: w.tags.gl_flow ? "gas_lift" : w.tags.water_flow ? "natural_water" : "natural", manifold: one, repeater:"", tags:w.tags, enabled:true}));
+    renderMan();
+    say($("mConn"), `${r.n_variables} variables lues : ${r.wells.length} puits et ${r.manifolds.length} manifolds reconnus, ${r.unused.length} variables non utilisées. Vérifier l'étape 3 : type, manifold et répéteur de chaque puits.`, "ok");
+    location.hash = "#s3";
+  }catch(e){ say($("mConn"), "Échec : " + e.message, "bad"); }
+});
+async function testMsg(kind, to, el, btn){
+  await busy(btn, async () => {
+    if(!to){ say(el, "Indiquer un destinataire.", "warn"); return; }
+    say(el, "Envoi…");
+    try{ const r = await post(`/api/setup/test-${kind}`, {form: collect(), to});
+      r.ok ? say(el, r.outbox ? `Mode test : message écrit dans ${r.outbox} (rien n'est envoyé).` : "Envoyé. Vérifier la réception.", "ok") : say(el, "Échec : " + r.error, "bad");
+    }catch(e){ say(el, "Configuration incomplète : " + e.message, "bad"); }
+  });
+}
+$("bSms").onclick = () => testMsg("sms", $("smsTo").value.trim(), $("mSms"), $("bSms"));
+$("bMail").onclick = () => testMsg("email", $("mailTo").value.trim(), $("mMail"), $("bMail"));
+$("bRead").onclick = () => busy($("bRead"), async () => {
+  say($("mRead"), "Lecture de chaque tag…");
+  try{
+    const r = await post("/api/setup/read-tags", {form: collect(), yaml: $("yamlWrap").hidden ? "" : $("yaml").value});
+    const bad = r.tags.filter(t => t.quality !== "good");
+    $("tRead").innerHTML = r.tags.map(t => `<tr><td>${esc(t.entity)}</td><td>${esc(SIGLAB[t.signal]||t.signal)}</td><td>${esc(t.value)}</td>
+      <td class="${t.quality === "good" ? "ok" : "bad"}">${esc(t.quality)}</td><td>${t.age_s == null ? "" : t.age_s + " s"}</td><td><code>${esc(t.address)}</code></td></tr>`).join("");
+    $("readWrap").hidden = false;
+    say($("mRead"), r.ok ? (bad.length ? `${r.tags.length} tags lus, ${bad.length} en défaut (voir le tableau) : corriger l'adresse ou supprimer le tag.` : `${r.tags.length} tags lus, tous corrects.`) : "Lecture impossible : " + r.error, r.ok && !bad.length ? "ok" : "warn");
+  }catch(e){ say($("mRead"), "Configuration incomplète : " + e.message, "bad"); }
+});
+$("bYaml").onclick = () => busy($("bYaml"), async () => {
+  const r = await post("/api/setup/preview", {form: collect()});
+  $("yaml").value = r.yaml; $("yamlWrap").hidden = false;
+  say($("mRead"), r.error ? "À corriger : " + r.error : `Configuration valide : ${r.wells} puits.`, r.error ? "bad" : "ok");
+});
+$("bSave").onclick = () => busy($("bSave"), async () => {
+  say($("mSave"), "Enregistrement…");
+  try{
+    const adm = {name: $("admName").value.trim(), password: $("admPw").value};
+    const r = await post("/api/setup/save", {form: collect(), yaml: $("yamlWrap").hidden ? "" : $("yaml").value, admin: adm.name ? adm : null});
+    say($("mSave"), `Enregistré dans ${r.path}. La surveillance démarre : le tableau de bord sera disponible dans quelques secondes.`, "ok");
+    setTimeout(() => { location.href = "/"; }, 6000);
+  }catch(e){ say($("mSave"), "À corriger : " + e.message, "bad"); }
+});
+(async () => {
+  const r = await (await fetch("/api/setup/state", {cache:"no-store"})).json();
+  F = Object.assign({wells:[], manifolds:[], roster:[], teams:{}}, r.form);
+  if(!r.configured){ F.roster = [{name:"", role:"Technicien d'astreinte", phone:""}, {name:"", role:"Chef de quart", phone:""}, {name:"", role:"Superviseur production", phone:""}]; }
+  else { $("sub").textContent = "Modifier les réglages de l'agent. Il redémarre après l'enregistrement."; }
+  if(r.has_users) $("admHelp").textContent = "Des comptes existent déjà. Remplir seulement pour ajouter un superviseur.";
+  fill();
+})();
+</script>
+</body>
+</html>

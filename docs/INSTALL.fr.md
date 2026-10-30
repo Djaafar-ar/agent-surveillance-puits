@@ -1,6 +1,6 @@
 # Installer l'agent sur un site
 
-Guide pour l'équipe instrumentation / informatique du site. Durée : une demi-journée, dont la plus grande partie pour trouver les adresses des tags.
+Guide pour l'équipe instrumentation / informatique du site. Durée : environ une heure, sans modifier aucun fichier à la main.
 
 ## 0. Avant de commencer : les autorisations
 
@@ -16,70 +16,51 @@ Sans ces trois points, ne branchez rien.
 
 | Élément | Recommandation |
 |---|---|
-| PC ou serveur | Windows 10/11 ou Windows Server, allumé en permanence, onduleur |
-| Python | 3.10 ou plus récent, depuis python.org, case « Add python.exe to PATH » cochée |
+| PC ou serveur | Windows 10/11 ou Windows Server, allumé en permanence, onduleur. Pas besoin d'internet |
+| Python | 3.10 à 3.13. S'il n'est pas installé, mettre l'installateur `python-3.12.x-amd64.exe` (fourni par l'informatique) dans le dossier `install` : le script l'installe tout seul |
 | SMS | Modem GSM USB avec une carte SIM dédiée (recommandé), ou un téléphone Android avec l'application « SMS Gateway for Android » |
 | E-mail | Un compte SMTP de service (adresse dédiée à l'agent) |
 
-## 2. Installer
+## 2. Installer (10 minutes)
 
-1. Copier le dossier `agent-surveillance-puits` sur le PC, par exemple dans `C:\agent-surveillance-puits`.
+1. Copier le dossier du **paquet Windows hors ligne** (`agent-surveillance-puits-windows.zip`, décompressé) sur le PC, par exemple dans `C:\agent-surveillance-puits`. Il contient toutes les bibliothèques : aucune connexion internet n'est nécessaire.
 2. Clic droit sur `install\install-windows.bat` > **Exécuter en tant qu'administrateur**.
-3. Le script crée l'environnement Python, installe les bibliothèques, crée `config\config.yaml` et `config\secrets.env`, et enregistre l'agent comme tâche qui démarre avec Windows.
+3. Le script installe Python si besoin, l'environnement et les bibliothèques, enregistre l'agent comme tâche qui démarre avec Windows et redémarre s'il s'arrête, puis **ouvre l'assistant de mise en service** dans le navigateur.
 
-## 3. Configurer
+## 3. L'assistant de mise en service (http://127.0.0.1:8080/setup)
 
-Ouvrir `config\config.yaml` avec le Bloc-notes. Chaque ligne est commentée. À remplir :
+Aucun fichier à modifier à la main. L'assistant n'est accessible que depuis le PC lui-même.
 
-- `connector.url` : l'adresse du serveur OPC UA, par exemple `opc.tcp://192.168.10.20:4840`.
-- `well_tags` et `manifold_tags` : le modèle d'adresse de chaque mesure. `{id}` est remplacé par le nom du puits.
-- `satellites` et `manifolds` : le réseau de conduites (zone → station satellite → manifold). Le `repeater` de chaque manifold ou de chaque puits décrit le réseau radio, qui peut regrouper d'autres puits.
-- `wells` : la liste des puits, avec leur type (`gas_lift`, `natural`, `natural_water`), leur manifold et leur MAASP.
-- Les mesures que votre SCADA n'a pas : supprimez simplement la ligne. Plus il y a de mesures (pression ligne, pression d'arrivée, consigne gas lift, courant du panneau solaire…), plus le diagnostic est précis.
-- `roster` : la liste d'astreinte, dans l'ordre d'escalade, avec les numéros au format international (+213…).
-- `sms` et `email` : le modem ou le téléphone, et le serveur SMTP.
+1. **Site** : nom, langue.
+2. **SCADA** : adresse du serveur OPC UA (par exemple `opc.tcp://192.168.10.20:4840`) et le compte en lecture seule. « Tester la connexion », puis **« Explorer le SCADA et reconnaître les puits »** : l'agent lit l'arborescence du serveur et reconnaît les puits, les manifolds et leurs mesures à partir des noms des tags (pression tête, ligne, annulaires, batterie RTU, SDV, feu, intrusion…).
+3. **Puits** : vérifier la proposition ligne par ligne : type de puits (éruptif, gas lift, avec eau de dessalage), manifold, répéteur radio, MAASP. Décocher un puits à ne pas surveiller. Corriger un tag si besoin (« tags »).
+4. **Personnes** : liste d'astreinte dans l'ordre d'escalade, e-mails des alarmes et des rapports, e-mails des équipes, heures de relève.
+5. **SMS et e-mail** : modem GSM (port `COM3`…, code PIN), ou téléphone Android, ou mode test. Bouton « Envoyer un SMS de test » et « Envoyer un e-mail de test ».
+6. **Accès** : tableau de bord sur ce PC seulement, ou ouvert au réseau de la salle de contrôle ; compte superviseur.
+7. **Vérifier et démarrer** : « Lire chaque tag une fois » montre la valeur, la qualité et l'âge de chaque mesure (tout doit être `good`). « Enregistrer et démarrer » : la configuration est écrite (`config\config.yaml`, les mots de passe dans `config\secrets.env`) et la surveillance démarre.
 
-Puis ouvrir `config\secrets.env` et mettre les mots de passe (compte OPC UA, SMTP, téléphone passerelle). Ce fichier n'est lisible que par les administrateurs.
+Pour changer un réglage plus tard : tableau de bord > **Paramètres** (superviseur). L'agent redémarre tout seul après l'enregistrement.
 
-### Trouver les adresses des tags
+Les réglages avancés (seuils d'alarme…) se font dans le fichier, à l'étape 7 (« Voir le fichier de configuration ») ou dans `config\config.yaml`. Le Modbus TCP se configure aussi dans le fichier : voir `config\config.modbus.example.yaml`.
 
-```bat
-cd C:\agent-surveillance-puits
-.venv\Scripts\python -m agent browse --config config\config.yaml
-```
+**Téléphone Android et réponse « OK »** : pour que la réponse « OK » acquitte l'alarme, déclarer dans l'application un webhook `sms:received` vers `http://<adresse du PC>:8080/api/sms-in` (le tableau de bord doit alors être ouvert au réseau).
 
-La commande affiche l'arborescence du serveur OPC UA avec les adresses (`ns=2;s=...`) et les valeurs actuelles. Comparez avec les écrans du SCADA pour retrouver chaque mesure. Ajoutez `--node "ns=2;s=PUITS-01"` pour explorer une branche, et `--depth 5` pour descendre plus bas.
+## 4. Charger l'historique (recommandé)
 
-### Vérifier chaque tag
+Tableau de bord > onglet **Données** (superviseur) : envoyer l'export de l'historien des derniers mois (CSV tel qu'il sort), la liste des tags et la main courante. L'agent reconnaît les tags, nettoie les données et montre un rapport de qualité. Ensuite :
 
-```bat
-.venv\Scripts\python -m agent check --config config\config.yaml
-```
+* **Ajouter à l'historique de l'agent** : l'analyse long terme (déclins, batteries, annulaires…) fonctionne dès le premier jour au lieu d'attendre des semaines ;
+* **Rejouer la période (backtest)** : le rapport qui montre ce que l'agent aurait annoncé, et combien de jours avant.
 
-Pour chaque puits et chaque mesure : la valeur, la qualité et l'âge de la donnée. Tout doit être `good` avec un âge de quelques secondes. Une ligne `MISSING` signale une mauvaise adresse. Une valeur très ancienne signale une RTU qui ne communique plus. Comparez quelques valeurs avec l'écran SCADA.
+Formats acceptés et ce qu'il faut demander : [DONNEES.fr.md](DONNEES.fr.md).
 
-## 4. SMS et e-mail
+## 5. Les premières heures
 
-**Modem GSM** : brancher le modem, regarder son port dans le Gestionnaire de périphériques (par exemple `COM3`) et le mettre dans `sms.port`. Si la carte SIM a un code PIN, mettre `pin_env: SIM_PIN` et le code dans `secrets.env`.
+Ouvrir http://127.0.0.1:8080. Pendant les deux premières heures, les puits sont marqués « apprentissage des valeurs normales » : l'agent observe avant de déclencher des alarmes de pression. Les alarmes de sécurité (vanne, feu, intrusion, RTU perdue) sont actives tout de suite.
 
-**Téléphone Android** : installer « SMS Gateway for Android », activer « Local Server », noter l'adresse, l'identifiant et le mot de passe affichés. Pour que la réponse « OK » acquitte l'alarme, déclarer dans l'application un webhook `sms:received` vers `http://<adresse du PC>:8080/api/sms-in` (le tableau de bord doit alors écouter sur le réseau, avec un mot de passe).
+Le journal technique est dans `data\agent.log`, l'historique dans `data\agent.db` (sauvegardé chaque jour dans `data\backup`).
 
-Tester :
-
-```bat
-.venv\Scripts\python -m agent test-sms   --config config\config.yaml --to +213XXXXXXXXX
-.venv\Scripts\python -m agent test-email --config config\config.yaml --to vous@site.dz
-```
-
-## 5. Démarrer
-
-```bat
-schtasks /run /tn AgentSurveillancePuits
-```
-
-Ouvrir http://127.0.0.1:8080 sur le PC. Pendant les deux premières heures, les puits sont marqués « apprentissage des valeurs normales » : l'agent observe avant de déclencher des alarmes de pression. Les alarmes de sécurité (vanne, feu, intrusion, RTU perdue) sont actives tout de suite.
-
-Le journal technique est dans `data\agent.log`, l'historique dans `data\agent.db`.
+En ligne de commande, les outils restent disponibles : `python -m agent browse` (arborescence OPC UA), `check` (lire chaque tag), `test-sms`, `test-email`, `status`.
 
 ## 6. Mise en service : le pilote
 

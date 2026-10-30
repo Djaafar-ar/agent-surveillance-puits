@@ -51,6 +51,12 @@ class App:
         self._next_findings = 0.0
         self.cycles = 0
         self.srv = None
+        self.restart = False
+
+    def request_restart(self):
+        """Settings changed from the dashboard: stop cleanly, the launcher starts again."""
+        self.restart = True
+        self.stop.set()
 
     def snapshot(self):
         s = self.engine.state()
@@ -245,3 +251,6 @@ class App:
         self.production.flush()
         self.upkeep.save_baselines()
         self.conn.close()
+        if self.srv:
+            self.srv.shutdown()
+            self.srv.server_close()

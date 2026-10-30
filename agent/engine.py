@@ -790,7 +790,7 @@ class Engine:
                 self._sms(a, a.level, "escal")
             elif not a.exhausted:
                 a.exhausted = True
-                self.out.journal("escal", a.entity, "Roster exhausted / liste d'astreinte épuisée.")
+                self.out.journal("escal", a.entity, fmt(self.lang, "roster_done"))
 
     def ack(self, alarm_id: int, idx: int, via: str) -> bool:
         with self.lock:

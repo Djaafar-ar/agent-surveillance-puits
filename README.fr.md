@@ -89,9 +89,24 @@ Sur une année simulée avec 11 problèmes cachés (`python -m simulator.export`
 
 ## Installation sur un site
 
-Le guide pas à pas pour l'équipe du site est ici : **[docs/INSTALL.fr.md](docs/INSTALL.fr.md)**.
+Aucun fichier à modifier à la main, pas besoin d'internet sur le PC du site. Le guide pas à pas pour l'équipe du site est ici : **[docs/INSTALL.fr.md](docs/INSTALL.fr.md)**.
 
-En résumé : copier le dossier sur le PC, lancer `install\install-windows.bat` en administrateur, renseigner `config\config.yaml` et `config\secrets.env`, vérifier les tags avec `python -m agent check`, tester SMS et e-mail, puis démarrer le service.
+1. Copier le paquet Windows hors ligne (`agent-surveillance-puits-windows.zip`, 12 Mo, toutes les bibliothèques incluses) sur le PC et le décompresser. Si Python n'est pas installé, mettre l'installateur Python dans le dossier `install`.
+2. Clic droit sur `install\install-windows.bat` > **Exécuter en tant qu'administrateur** : tout s'installe, l'agent démarre avec Windows, et l'**assistant de mise en service** s'ouvre dans le navigateur.
+3. Dans l'assistant : adresse OPC UA du SCADA et compte en lecture seule → **« Explorer le SCADA »** : l'agent reconnaît les puits, les manifolds et leurs mesures à partir des noms des tags → vérifier chaque puits → liste d'astreinte, e-mails, modem SMS, avec boutons de test → compte superviseur → lecture de chaque tag → enregistrer et démarrer.
+4. Recommandé : onglet **Données** du tableau de bord : envoyer l'export de l'historien, la liste des tags et la main courante. L'agent les nettoie, puis rejoue la période (backtest) ou l'ajoute à son historique pour que l'analyse long terme fonctionne dès le premier jour.
+
+## Ce que fait l'agent, et ce qui reste humain
+
+| L'agent fait | Les personnes font toujours |
+|---|---|
+| Surveille chaque puits chaque minute, jour et nuit, sans fatigue | Décider : fermer un puits, envoyer une équipe, accepter un risque |
+| Trouve la cause probable, regroupe les alarmes, prévient et escalade | Agir sur les équipements : l'agent n'envoie jamais de commande au SCADA |
+| Annonce les problèmes lents des semaines à l'avance | Aller sur site, réparer, tester, laver, changer la duse |
+| Écrit la main courante, le rapport de production, la relève, les ordres de travail, et vérifie qu'une réparation a marché | Signer pour la sécurité et les chiffres de production |
+| Répond aux questions à partir de ses données | Savoir ce qui n'est pas dans les données : ce qu'on a vu sur site, ce qu'une équipe a dit |
+
+Un opérateur peut surveiller beaucoup plus de puits, et rien n'est manqué la nuit. C'est le but, pas de supprimer l'opérateur : les entreprises, les règles de sécurité et la responsabilité exigent une personne qui décide.
 
 ## Essayer sans SCADA
 
@@ -114,7 +129,7 @@ Une version de la démo qui tourne dans le navigateur, sans installation : **[dj
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # moteur et bout en bout : 135 tests, environ 5 minutes
+python -m pytest tests          # moteur et bout en bout : 140 tests, environ 6 minutes
 python tests/test_demo_page.py  # démo navigateur
 ```
 

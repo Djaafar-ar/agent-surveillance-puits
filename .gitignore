@@ -18,3 +18,4 @@ certs/
 
 # code, not data
 !simulator/export.py
+dist/

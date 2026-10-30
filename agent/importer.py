@@ -523,3 +523,101 @@ th{{background:#faf9f6;font-size:12px}} td.n{{text-align:right;font-variant-nume
 <th>Mauvaise qualité</th><th>Sentinelles / hors plage</th><th>Pics</th><th>Doublons</th><th>Figé</th></tr>{''.join(rows)}</table></div>
 {f"<h2>Lignes du journal à vérifier</h2><ul>{rev}</ul>" if rev else ""}
 <p style="color:#66645e">Chaque valeur retirée est comptée ici ; aucune n'est inventée. Les trous restent des trous.</p></main></body></html>"""
+
+
+# ---------------------------------------------------------------------- seed the live history
+def seed_history(store, logbook, export_csv, events_csv=None, cfg=None):
+    """Load an imported export into the agent's daily history (what the long-term analysis
+    reads), so a newly installed agent knows the last months from day one. Days the agent
+    has already recorded itself are kept as they are. Past events go to the logbook as
+    history (they do not change the current status of any well)."""
+    agg: dict = {}
+    with open(export_csv, encoding="utf-8") as f:
+        rd = csv.reader(f)
+        head = next(rd)
+        first = [next(rd), next(rd)]
+        interval_s = (parse_time(first[1][0]) - parse_time(first[0][0])).total_seconds() or 3600
+        rd = iter(first + list(rd))
+        cols = [(i, h.split(".", 1)) for i, h in enumerate(head) if i and "." in h]
+        for r in rd:
+            day = r[0][:10]
+            for i, (ent, sig) in cols:
+                v = r[i] if i < len(r) else ""
+                if sig == "whp":
+                    a = agg.setdefault((day, ent, "online"), [0.0, 1.0, 0.0, 0])
+                    x = 1.0 if v else 0.0
+                    a[0] += x
+                    a[1], a[2], a[3] = min(a[1], x), max(a[2], x), a[3] + 1
+                if not v:
+                    continue
+                x = float(v)
+                a = agg.get((day, ent, sig))
+                if a is None:
+                    agg[(day, ent, sig)] = [x, x, x, 1]
+                else:
+                    a[0] += x
+                    a[1], a[2], a[3] = min(a[1], x), max(a[2], x), a[3] + 1
+    # pressure lost across the choke and along the line, as the live agent records it
+    for (d, e, s), a in list(agg.items()):
+        if s == "whp" and (d, e, "line_p") in agg and a[3]:
+            lp = agg[(d, e, "line_p")]
+            v = a[0] / a[3] - lp[0] / lp[3]
+            agg[(d, e, "dp_choke")] = [v * a[3], v, v, a[3]]
+    # shut-in and test periods from the event log (exports rarely have the valve status)
+    if events_csv:
+        _periods_from_events(events_csv, agg)
+    have = {}
+    with store.lock:
+        for d, e, s in store.db.execute("SELECT day, entity, signal FROM daily_sig"):
+            have[(d, e, s)] = True
+    # the agent counts one reading per poll: scale the counts so imported days weigh like its own
+    k = max(1.0, interval_s / (cfg.poll_seconds if cfg else 60))
+    rows = [(d, e, s, a[0] / a[3], a[1], a[2], round(a[3] * k), a[0] * k) for (d, e, s), a in agg.items()
+            if a[3] and (d, e, s) not in have]
+    store.put_daily(rows)
+    n_ev = 0
+    if events_csv and logbook is not None:
+        existing = {(round(x["t"]), x["equipment"], x["text"]) for x in logbook.entries(limit=100000)}
+        with open(events_csv, encoding="utf-8") as f:
+            for e in csv.DictReader(f):
+                t = parse_time(e["datetime"]).timestamp()
+                kind = "intervention" if e["type"] == "intervention" else "note"
+                text = f"[historique] {e['description']}"
+                if (round(t), e["equipment"], text) in existing:
+                    continue
+                logbook.add(kind, text, "import", e["equipment"], t=t)
+                n_ev += 1
+    days = sorted({d for d, _, _ in agg})
+    return {"rows": len(rows), "days": len(days), "first": days[0] if days else None, "last": days[-1] if days else None,
+            "events": n_ev, "skipped_existing": sum(1 for k in agg if k in have)}
+
+
+def _periods_from_events(events_csv, agg, test_hours=12):
+    """Daily fraction of time shut in / on test, from shut_in -> reopen and test events."""
+    with open(events_csv, encoding="utf-8") as f:
+        evs = sorted((parse_time(e["datetime"]), e["equipment"], e["type"]) for e in csv.DictReader(f))
+    days = sorted({d for d, _, _ in agg})
+    if not days:
+        return
+    end = datetime.fromisoformat(days[-1]) + timedelta(days=1)
+    spans: dict = defaultdict(list)
+    open_: dict = {}
+    for t, eq, typ in evs:
+        if typ == "shut_in" and eq not in open_:
+            open_[eq] = t
+        elif typ == "reopen" and eq in open_:
+            spans[(eq, "shut")].append((open_.pop(eq), t))
+        elif typ == "test":
+            spans[(eq, "test")].append((t, t + timedelta(hours=test_hours)))
+    for eq, t in open_.items():
+        spans[(eq, "shut")].append((t, end))
+    wells = {e for _, e, s in agg if s == "whp"}
+    for eq in wells:
+        for sig in ("shut", "test"):
+            for d in days:
+                d0 = datetime.fromisoformat(d)
+                d1 = d0 + timedelta(days=1)
+                sec = sum(max(0.0, (min(b, d1) - max(a, d0)).total_seconds()) for a, b in spans.get((eq, sig), []))
+                x = sec / 86400
+                n = agg.get((d, eq, "online"), [0, 0, 0, 24])[3]
+                agg[(d, eq, sig)] = [x * n, x, x, n]

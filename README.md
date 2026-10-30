@@ -114,22 +114,26 @@ flowchart LR
 
 ## Install on a site (Windows)
 
-Requirements: Windows 10/11 or Server, [Python 3.10+](https://www.python.org/downloads/) ("Add python.exe to PATH"), network access to the SCADA's OPC UA server (or the RTUs' Modbus), a GSM USB modem or an Android phone for SMS, an SMTP account for e-mail.
+No file to edit by hand, no internet needed on the site PC.
 
-1. Copy the folder to the PC, for example `C:\agent-surveillance-puits`.
-2. Right-click `install\install-windows.bat` > **Run as administrator**. It creates the Python environment, installs the dependencies and registers the agent as a task that starts with Windows and restarts it if it stops.
-3. Edit `config\config.yaml`: SCADA address, tag addresses, wells, on-call phones, e-mail addresses.
-4. Put the passwords in `config\secrets.env` (never in the YAML).
-5. Commissioning:
-   ```bat
-   .venv\Scripts\python -m agent browse --config config\config.yaml     :: find tag addresses on the OPC UA server
-   .venv\Scripts\python -m agent check  --config config\config.yaml     :: read every tag once: value, quality, age
-   .venv\Scripts\python -m agent test-sms   --config config\config.yaml --to +213XXXXXXXXX
-   .venv\Scripts\python -m agent test-email --config config\config.yaml --to you@site.dz
-   ```
-6. Start: `schtasks /run /tn AgentSurveillancePuits`, then open http://127.0.0.1:8080.
+1. Build the offline package once (`python tools/build_windows_package.py` → `dist/agent-surveillance-puits-windows.zip`, about 12 MB with every library for Python 3.10–3.13), copy it to the PC and unzip it, e.g. in `C:\agent-surveillance-puits`. If Python is not installed, put the Python installer (`python-3.12.x-amd64.exe`) in the `install` folder.
+2. Right-click `install\install-windows.bat` > **Run as administrator**. It installs Python if needed and the libraries (offline), registers the agent as a task that starts with Windows and restarts if it stops, and opens the **setup wizard** in the browser.
+3. In the wizard (http://127.0.0.1:8080/setup, local PC only): SCADA OPC UA address and read-only account → **"Explore the SCADA"**: the agent reads the OPC UA address space and recognises the wells, manifolds and their signals from the tag names → check each well (type, manifold, radio repeater) → on-call roster, e-mails, SMS modem, with test buttons → supervisor account → **read every tag once** → save and start.
+4. Optional but recommended: dashboard > **Data** tab: upload the historian export of the last months, the tag list and the logbook. The agent cleans them, then either replays the period (backtest) or adds it to its history so the long-term analysis works from day one.
 
-Step-by-step guide for the site team, in French: [docs/INSTALL.fr.md](docs/INSTALL.fr.md). Linux: `install/agent.service`.
+Settings can be changed later from the dashboard (**Settings**, supervisors); the agent restarts itself. Step-by-step guide for the site team, in French: [docs/INSTALL.fr.md](docs/INSTALL.fr.md). Linux: `install/agent.service`.
+
+## What the agent does, and what stays human
+
+| The agent does | People still do |
+|---|---|
+| Watches every well every minute, day and night, and never gets tired | Decide: shut a well, send a crew, accept a risk |
+| Finds the probable cause, groups alarms, pages and escalates | Act on the equipment: the agent never sends a command to the SCADA |
+| Predicts slow problems weeks ahead | Go on site, repair, test, wash, change the choke |
+| Writes the logbook entries, production report, handover, work orders, and checks that a repair worked | Sign for safety and production figures |
+| Answers questions from its data | Know what is not in the data: what was seen on site, what a team said |
+
+One operator can watch many more wells, and nothing is missed at night. That is the goal, not removing the operator: companies, safety rules and responsibility all require a person who decides.
 
 ### Connecting to your SCADA
 
@@ -168,7 +172,7 @@ A browser-only version of the demo, with no installation, is available online: *
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest tests          # engine and end-to-end: 135 tests, about 5 minutes
+python -m pytest tests          # engine and end-to-end: 140 tests, about 6 minutes
 python tests/test_demo_page.py  # browser demo (needs: python -m playwright install chromium)
 ```
 
